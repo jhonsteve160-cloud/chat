@@ -1,25 +1,31 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Chat Room</title>
   <meta charset="UTF-8" />
+  <title>Chat</title>
   <script src="/socket.io/socket.io.js"></script>
+
   <style>
-    body { font-family:Arial;background:#f5f5f5;padding:20px; }
-    #chat { height:350px; overflow-y:auto; border:1px solid #ccc; background:#fff; padding:10px; }
-    #msg { width:75%; padding:8px; }
+    body { font-family:Arial; background:#eef1f4; padding:25px; }
+    #chatBox { height:360px; overflow-y:auto; background:#fff;
+      border:1px solid #ccc; padding:10px; border-radius:8px; }
+    .msg { margin-bottom:6px; }
+    .time { color:#777; font-size:11px; }
+    input { width:75%; padding:9px; }
+    button { padding:9px 14px; }
   </style>
 </head>
+
 <body>
 
-<h2>Real-Time Chat</h2>
-<p id="user"></p>
+<h2>Secure Chat</h2>
+<p id="me"></p>
 
-<div id="chat"></div>
+<div id="chatBox"></div>
 
 <br>
 
-<input id="msg" placeholder="Type message..." />
+<input id="msg" placeholder="Type a message..." />
 <button onclick="send()">Send</button>
 
 <br><br>
@@ -27,44 +33,38 @@
 
 <script>
   const socket = io();
+  const chat = document.getElementById("chatBox");
+  const msg = document.getElementById("msg");
 
-  // username from session via query param fallback
-  fetch("/whoami").catch(()=>{})
+  let username = "";
 
-  const username = new URLSearchParams(window.location.search).get("u")
-    || "You";
+  fetch("/whoami")
+    .then(r => r.json())
+    .then(u => {
+      username = u.username;
+      document.getElementById("me").textContent =
+        "Logged in as: " + username;
 
-  document.getElementById("user").textContent =
-    "Logged in as: " + username;
+      socket.emit("join", username);
+    });
 
-  const chat = document.getElementById("chat");
-
-  function add(msg) {
+  function add(m) {
     const div = document.createElement("div");
-    div.textContent =
-      `[${msg.username}] ${msg.message}`;
+    div.className = "msg";
+    div.innerHTML =
+      `<b>${m.sender}</b>: ${m.content}
+       <span class="time">${m.time}</span>`;
     chat.appendChild(div);
     chat.scrollTop = chat.scrollHeight;
   }
 
-  // Load past messages
-  socket.on("chat_history", messages => {
-    messages.forEach(add);
-  });
-
-  // Receive new message
-  socket.on("new_message", add);
+  socket.on("history", messages => messages.forEach(add));
+  socket.on("message", add);
 
   function send() {
-    const box = document.getElementById("msg");
-    if (!box.value.trim()) return;
-
-    socket.emit("send_message", {
-      username,
-      message: box.value
-    });
-
-    box.value = "";
+    if (!msg.value.trim()) return;
+    socket.emit("message", msg.value);
+    msg.value = "";
   }
 </script>
 
