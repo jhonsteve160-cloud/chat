@@ -1,189 +1,226 @@
 import express from "express";
 import session from "express-session";
-import path from "path";
-import { fileURLToPath } from "url";
-import { Pool } from "pg";
-import bcrypt from "bcryptjs";
-import http from "http";
+import bcrypt from "bcrypt";
 import { Server } from "socket.io";
+import http from "http";
+import pkg from "pg";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const { Pool } = pkg;
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-const PORT = process.env.PORT || 3000;
-
-// ---------- DATABASE ----------
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// Create tables if missing
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS users (
-    username TEXT PRIMARY KEY,
-    password_hash TEXT NOT NULL,
-    role TEXT DEFAULT 'user'
-  );
-`);
-
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS messages (
-    id SERIAL PRIMARY KEY,
-    sender TEXT NOT NULL,
-    content TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW()
-  );
-`);
-
-// Ensure admin exists (no credentials shown on site)
-const ADMIN_USER = process.env.ADMIN_USER || "admin";
-const ADMIN_PASS = process.env.ADMIN_PASS || "admin123";
-
-const adminCheck = await pool.query(
-  `SELECT * FROM users WHERE username=$1`,
-  [ADMIN_USER]
-);
-
-if (adminCheck.rowCount === 0) {
-  const hash = bcrypt.hashSync(ADMIN_PASS, 10);
-  await pool.query(
-    `INSERT INTO users (username,password_hash,role)
-     VALUES ($1,$2,'admin')`,
-    [ADMIN_USER, hash]
-  );
-  console.log("Admin account created:");
-  console.log(`Username: ${ADMIN_USER}`);
-  console.log("Password: (value from ADMIN_PASS env)");
-}
-
-// ---------- MIDDLEWARE ----------
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static(__dirname));
 
 app.use(
   session({
-    secret: "secure-chat-secret",
+    secret: process.env.SESSION_SECRET || "change-me",
     resave: false,
     saveUninitialized: false
   })
 );
 
-function requireLogin(req, res, next) {
-  if (!req.session.user) return res.redirect("/");
-  next();
+//
+// ---------- AUTO DATABASE FIX / MIGRATIONS -----------
+//
+
+async function migrate() {
+  // enable UUID + crypto helpers where supported
+  await pool.query(`
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+  `).catch(() => {});
+
+  // USERS TABLE
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  // ensure ROLE column exists (prevents crash)
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
+  `);
+
+  // MESSAGES TABLE
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      room TEXT DEFAULT 'global',
+      content TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+
+  // indexes
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room);
+    CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+  `);
+
+  // seed admin if missing
+  const adminUser = "admin";
+  const adminPass = process.env.ADMIN_PASSWORD || "change_this_admin_password";
+
+  const hash = await bcrypt.hash(adminPass, 10);
+
+  await pool.query(
+    `
+    INSERT INTO users (username, password_hash, role)
+    VALUES ($1,$2,'admin')
+    ON CONFLICT (username) DO NOTHING;
+  `,
+    [adminUser, hash]
+  );
+
+  console.log("Database migrated & admin ensured");
 }
 
-function requireAdmin(req, res, next) {
-  if (!req.session.user || req.session.user.role !== "admin")
-    return res.status(403).send("Forbidden");
-  next();
+await migrate();
+
+//
+// ---------- AUTH HELPERS -----------
+//
+
+async function getUser(username) {
+  const { rows } = await pool.query(
+    "SELECT * FROM users WHERE username=$1 LIMIT 1",
+    [username]
+  );
+  return rows[0];
 }
 
-// ---------- ROUTES ----------
-app.get("/", (req, res) =>
-  res.sendFile(path.join(__dirname, "login.html"))
-);
+//
+// ---------- AUTH ROUTES -----------
+//
 
-app.get("/chat", requireLogin, (req, res) =>
-  res.sendFile(path.join(__dirname, "chat.html"))
-);
-
-app.get("/admin", requireAdmin, (req, res) =>
-  res.sendFile(path.join(__dirname, "admin.html"))
-);
-
-// Login
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
-  const result = await pool.query(
-    `SELECT * FROM users WHERE username=$1`,
-    [username]
-  );
+  const user = await getUser(username);
+  if (!user) return res.status(401).json({ error: "Invalid login" });
 
-  if (result.rowCount === 0) return res.status(401).send("Invalid login");
-
-  const user = result.rows[0];
-
-  if (!bcrypt.compareSync(password, user.password_hash))
-    return res.status(401).send("Invalid login");
+  const ok = await bcrypt.compare(password, user.password_hash);
+  if (!ok) return res.status(401).json({ error: "Invalid login" });
 
   req.session.user = {
+    id: user.id,
     username: user.username,
     role: user.role
   };
 
-  res.redirect("/chat");
+  res.json({ ok: true });
 });
 
-// Logout
-app.get("/logout", (req, res) => {
-  req.session.destroy(() => res.redirect("/"));
+// 🚫 disable public signup
+app.post("/signup", (_req, res) => {
+  return res.status(403).json({
+    error: "New accounts may only be created via the admin dashboard."
+  });
 });
 
-// Admin create users (ONLY admin)
-app.post("/admin/create-user", requireAdmin, async (req, res) => {
-  const { username, password } = req.body;
+//
+// ---------- SOCKET AUTH -----------
+//
 
-  const hash = bcrypt.hashSync(password, 10);
-
-  await pool.query(
-    `INSERT INTO users (username,password_hash,role)
-     VALUES ($1,$2,'user')
-     ON CONFLICT (username) DO NOTHING`,
-    [username, hash]
-  );
-
-  res.redirect("/admin");
+io.engine.use((req, _res, next) => {
+  session({
+    secret: process.env.SESSION_SECRET || "change-me",
+    resave: false,
+    saveUninitialized: false
+  })(req, {}, next);
 });
 
-// API to fetch session username (for chat.html)
-app.get("/whoami", requireLogin, (req, res) => {
-  res.json({ username: req.session.user.username });
+io.use((socket, next) => {
+  const session = socket.request.session;
+  if (!session?.user) return next(new Error("unauthorized"));
+  socket.user = session.user;
+  next();
 });
 
-// ---------- SOCKET.IO ----------
-io.on("connection", socket => {
-  socket.on("join", async username => {
-    socket.username = username;
+//
+// ---------- CHAT / ROOMS / DMS -----------
+//
 
-    // send last 50 messages
-    const { rows } = await pool.query(
-      `SELECT sender,content,
-              to_char(created_at,'HH24:MI') AS time
-       FROM messages
-       ORDER BY id DESC
-       LIMIT 50`
-    );
+io.on("connection", (socket) => {
+  const user = socket.user;
 
-    socket.emit("history", rows.reverse());
+  socket.join("global");
+
+  // typing indicator
+  socket.on("typing", (room = "global") => {
+    socket.to(room).emit("typing", { user: user.username });
   });
 
-  socket.on("message", async msg => {
-    if (!socket.username) return;
+  // join custom room
+  socket.on("join", (room) => socket.join(room));
 
-    await pool.query(
-      `INSERT INTO messages (sender,content)
-       VALUES ($1,$2)`,
-      [socket.username, msg]
+  // send message
+  socket.on("message", async ({ content, room = "global", to }) => {
+    if (!content?.trim()) return;
+
+    // private DM channel
+    if (to) room = `dm:${[user.username, to].sort().join(":")}`;
+
+    const { rows } = await pool.query(
+      `
+      INSERT INTO messages (sender_id, room, content)
+      VALUES ($1,$2,$3)
+      RETURNING id, created_at
+    `,
+      [user.id, room, content]
     );
 
-    const payload = {
-      sender: socket.username,
-      content: msg,
-      time: new Date().toLocaleTimeString()
+    const msg = {
+      id: rows[0].id,
+      user: user.username,
+      content,
+      room,
+      created_at: rows[0].created_at
     };
 
-    io.emit("message", payload);
+    io.to(room).emit("message", msg);
   });
 });
 
-server.listen(PORT, () =>
-  console.log("Server running on port " + PORT)
-);
+//
+// ---------- HISTORY ENDPOINT -----------
+//
+
+app.get("/history/:room", async (req, res) => {
+  const room = req.params.room || "global";
+
+  const { rows } = await pool.query(
+    `
+    SELECT m.id, m.content, m.created_at, u.username AS user
+    FROM messages m
+    JOIN users u ON u.id = m.sender_id
+    WHERE room=$1
+    ORDER BY created_at ASC
+  `,
+    [room]
+  );
+
+  res.json(rows);
+});
+
+//
+// ---------- START SERVER -----------
+//
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log("Server running on", PORT);
+});
