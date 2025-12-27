@@ -1,36 +1,56 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Chat</title>
-</head>
+<html>
 <body>
-  <h1>Chat</h1>
+  <h3>Secure Private Chat</h3>
+
+  <p>
+    Logged in as <b id="me"></b> —
+    <a href="/logout">Logout</a>
+  </p>
+
+  <label>Send to:</label>
+  <input id="receiver" placeholder="username" />
+
   <ul id="messages"></ul>
+
   <form id="form">
-    <input id="input" autocomplete="off" placeholder="Type a message..." />
-    <button type="submit">Send</button>
+    <input id="input" autocomplete="off" />
+    <button>Send</button>
   </form>
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
     const socket = io();
-    const form = document.getElementById('form');
-    const input = document.getElementById('input');
-    const messages = document.getElementById('messages');
+    const me = document.getElementById("me");
+    const receiver = document.getElementById("receiver");
+    const messages = document.getElementById("messages");
+    const form = document.getElementById("form");
+    const input = document.getElementById("input");
 
-    form.addEventListener('submit', (e) => {
+    fetch("/whoami")
+      .then(r => r.json())
+      .then(d => (me.textContent = d.user));
+
+    function addMsg(msg) {
+      const li = document.createElement("li");
+      li.textContent = `${msg.from} ➜ ${msg.to}: ${msg.message}`;
+      messages.appendChild(li);
+    }
+
+    socket.on("chat-history", list => list.forEach(addMsg));
+
+    socket.on("chat message", addMsg);
+
+    form.addEventListener("submit", e => {
       e.preventDefault();
-      if (input.value) {
-        socket.emit('chat message', input.value);
-        input.value = '';
-      }
-    });
+      if (!input.value || !receiver.value) return;
 
-    socket.on('chat message', (msg) => {
-      const item = document.createElement('li');
-      item.textContent = msg;
-      messages.appendChild(item);
+      socket.emit("private-message", {
+        to: receiver.value,
+        message: input.value
+      });
+
+      input.value = "";
     });
   </script>
 </body>
