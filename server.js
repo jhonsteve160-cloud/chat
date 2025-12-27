@@ -1,63 +1,71 @@
 import express from "express";
 import session from "express-session";
-import bcrypt from "bcrypt";
 import { Server } from "socket.io";
 import http from "http";
 import pkg from "pg";
+import crypto from "crypto";
 
 const { Pool } = pkg;
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "change-me",
+    secret: process.env.SESSION_SECRET || "session-secret",
     resave: false,
-    saveUninitialized: false
+    saveUninitialized: false,
   })
 );
 
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
+});
+
 //
-// ----------- SAFE, ORDERED, NON-CRASHING MIGRATIONS -----------
+// --- PASSWORD HASHING (no bcrypt, no deps) ---
+//
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, stored) {
+  const [salt, hash] = stored.split(":");
+  const hashed = crypto.scryptSync(password, salt, 64).toString("hex");
+  return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(hashed));
+}
+
+//
+// --- SAFE AUTO-MIGRATIONS (will not crash) ---
 //
 
 async function migrate() {
   try {
-    // create table if missing (no role here on purpose)
     await pool.query(`
+      CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+      
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         username TEXT UNIQUE NOT NULL,
         password_hash TEXT NOT NULL,
+        role TEXT DEFAULT 'user',
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
 
-    // make sure role column exists BEFORE any inserts use it
-    await pool.query(`
-      ALTER TABLE users
-      ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';
-    `);
-
-    // backfill nulls
-    await pool.query(`
-      UPDATE users SET role='user' WHERE role IS NULL;
-    `);
-
-    // messages table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS messages (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        sender_id UUID REFERENCES users(id) ON DELETE CASCADE,
-        room TEXT DEFAULT 'global',
+        sender_id UUID REFERENCES users(id),
+        room TEXT NOT NULL,
         content TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT NOW()
       );
@@ -67,83 +75,89 @@ async function migrate() {
       CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room);
     `);
 
-    // --- ensure admin account exists AFTER role column ---
-    const adminUser = "admin";
-    const adminPass =
-      process.env.ADMIN_PASSWORD || "change_this_admin_password";
-
-    const hash = await bcrypt.hash(adminPass, 10);
+    // --- ensure admin exists ---
+    const adminPass = process.env.ADMIN_PASSWORD || "admin123";
+    const hash = hashPassword(adminPass);
 
     await pool.query(
       `
-        INSERT INTO users (username, password_hash, role)
-        VALUES ($1,$2,'admin')
-        ON CONFLICT (username) DO NOTHING;
-      `,
-      [adminUser, hash]
+      INSERT INTO users (username, password_hash, role)
+      VALUES ('admin', $1, 'admin')
+      ON CONFLICT (username) DO NOTHING;
+    `,
+      [hash]
     );
 
-    console.log("DB schema OK — migrations applied");
+    console.log("DB ready");
   } catch (err) {
-    console.error("Migration failed but app will continue:", err.message);
+    console.log("Migration skipped:", err.message);
   }
 }
 
 await migrate();
 
 //
-// ----------- HELPERS -----------
-//
-
-async function getUser(username) {
-  const { rows } = await pool.query(
-    "SELECT * FROM users WHERE username=$1 LIMIT 1",
-    [username]
-  );
-  return rows[0];
-}
-
-//
-// ----------- AUTH -----------
+// --- AUTH ---
 //
 
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
-  const user = await getUser(username);
-  if (!user) return res.status(401).json({ error: "Invalid login" });
+  const { rows } = await pool.query(
+    `SELECT * FROM users WHERE username=$1 LIMIT 1`,
+    [username]
+  );
 
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.status(401).json({ error: "Invalid login" });
+  if (!rows.length) return res.status(401).json({ error: "Invalid login" });
+
+  const user = rows[0];
+
+  if (!verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: "Invalid login" });
+  }
 
   req.session.user = {
     id: user.id,
     username: user.username,
-    role: user.role || "user"
+    role: user.role,
   };
 
   res.json({ ok: true });
 });
 
-// 🚫 disable public signup completely
-app.post("/signup", (_req, res) => {
-  return res
+// 🚫 sign-ups disabled — only admin can add users
+app.post("/signup", (_req, res) =>
+  res
     .status(403)
-    .json({ error: "Accounts may only be created via admin dashboard." });
+    .json({ error: "Accounts may only be created via admin dashboard." })
+);
+
+//
+// --- ADMIN: CREATE USER ---
+//
+
+app.post("/admin/create-user", async (req, res) => {
+  if (!req.session.user || req.session.user.role !== "admin")
+    return res.status(403).json({ error: "Forbidden" });
+
+  const { username, password } = req.body;
+  const hash = hashPassword(password);
+
+  await pool.query(
+    `
+    INSERT INTO users (username, password_hash, role)
+    VALUES ($1,$2,'user')
+    ON CONFLICT (username) DO NOTHING;
+  `,
+    [username, hash]
+  );
+
+  res.json({ ok: true });
 });
 
 //
-// ----------- SOCKET + CHAT -----------
+// --- SOCKET AUTH ---
 //
-
-// attach session to socket transport
-io.engine.use(
-  session({
-    secret: process.env.SESSION_SECRET || "change-me",
-    resave: false,
-    saveUninitialized: false
-  })
-);
 
 io.use((socket, next) => {
   const s = socket.request.session;
@@ -152,32 +166,38 @@ io.use((socket, next) => {
   next();
 });
 
+//
+// --- CHAT ---
+//
+
 io.on("connection", (socket) => {
   const user = socket.user;
 
   socket.join("global");
 
+  // typing indicator
   socket.on("typing", (room = "global") => {
     socket.to(room).emit("typing", { user: user.username });
   });
 
+  // join dm / room
   socket.on("join", (room) => socket.join(room));
 
+  // send message
   socket.on("message", async ({ content, room = "global", to }) => {
     if (!content?.trim()) return;
 
     if (to) {
-      // deterministic dm room id
       room = `dm:${[user.username, to].sort().join(":")}`;
       socket.join(room);
     }
 
     const { rows } = await pool.query(
       `
-        INSERT INTO messages (sender_id, room, content)
-        VALUES ($1,$2,$3)
-        RETURNING id, created_at
-      `,
+      INSERT INTO messages (sender_id, room, content)
+      VALUES ($1,$2,$3)
+      RETURNING id, created_at
+    `,
       [user.id, room, content]
     );
 
@@ -186,7 +206,7 @@ io.on("connection", (socket) => {
       user: user.username,
       content,
       room,
-      created_at: rows[0].created_at
+      created_at: rows[0].created_at,
     };
 
     io.to(room).emit("message", msg);
@@ -194,7 +214,7 @@ io.on("connection", (socket) => {
 });
 
 //
-// ----------- HISTORY API -----------
+// --- HISTORY API ---
 //
 
 app.get("/history/:room", async (req, res) => {
@@ -202,12 +222,12 @@ app.get("/history/:room", async (req, res) => {
 
   const { rows } = await pool.query(
     `
-      SELECT m.id, m.content, m.created_at, u.username AS user
-      FROM messages m
-      JOIN users u ON u.id = m.sender_id
-      WHERE room=$1
-      ORDER BY created_at ASC
-    `,
+    SELECT m.id, m.content, m.created_at, u.username AS user
+    FROM messages m
+    JOIN users u ON u.id = m.sender_id
+    WHERE room=$1
+    ORDER BY created_at ASC
+  `,
     [room]
   );
 
@@ -215,8 +235,8 @@ app.get("/history/:room", async (req, res) => {
 });
 
 //
-// ----------- START -----------
+// --- START ---
 //
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log("Server running on", PORT));
+server.listen(PORT, () => console.log("Running on", PORT));
