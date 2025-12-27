@@ -3,15 +3,17 @@
 <head>
   <title>Chat Room</title>
   <meta charset="UTF-8" />
+  <script src="/socket.io/socket.io.js"></script>
   <style>
     body { font-family:Arial;background:#f5f5f5;padding:20px; }
-    #chat { height:300px; overflow-y:auto; border:1px solid #ccc; background:#fff; padding:10px; }
-    #msg { width:80%; padding:8px; }
+    #chat { height:350px; overflow-y:auto; border:1px solid #ccc; background:#fff; padding:10px; }
+    #msg { width:75%; padding:8px; }
   </style>
 </head>
 <body>
 
-<h2>Welcome to Chat</h2>
+<h2>Real-Time Chat</h2>
+<p id="user"></p>
 
 <div id="chat"></div>
 
@@ -20,18 +22,49 @@
 <input id="msg" placeholder="Type message..." />
 <button onclick="send()">Send</button>
 
+<br><br>
+<a href="/logout">Logout</a>
+
 <script>
+  const socket = io();
+
+  // username from session via query param fallback
+  fetch("/whoami").catch(()=>{})
+
+  const username = new URLSearchParams(window.location.search).get("u")
+    || "You";
+
+  document.getElementById("user").textContent =
+    "Logged in as: " + username;
+
   const chat = document.getElementById("chat");
 
-  function send() {
-    const msg = document.getElementById("msg");
-    if (!msg.value.trim()) return;
-
+  function add(msg) {
     const div = document.createElement("div");
-    div.textContent = msg.value;
+    div.textContent =
+      `[${msg.username}] ${msg.message}`;
     chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  }
 
-    msg.value = "";
+  // Load past messages
+  socket.on("chat_history", messages => {
+    messages.forEach(add);
+  });
+
+  // Receive new message
+  socket.on("new_message", add);
+
+  function send() {
+    const box = document.getElementById("msg");
+    if (!box.value.trim()) return;
+
+    socket.emit("send_message", {
+      username,
+      message: box.value
+    });
+
+    box.value = "";
   }
 </script>
 

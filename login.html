@@ -4,10 +4,9 @@
   <title>Login</title>
   <meta charset="UTF-8" />
   <style>
-    body { font-family: Arial; display:flex; height:100vh; justify-content:center; align-items:center; background:#f2f2f2; }
-    .box { background:#fff; padding:25px; border-radius:10px; width:300px; box-shadow:0 5px 20px rgba(0,0,0,.1); }
-    input { width:100%; padding:8px; margin-top:8px; }
-    button { width:100%; padding:10px; margin-top:12px; cursor:pointer; }
+    body { font-family:Arial; display:flex; justify-content:center; align-items:center; height:100vh; background:#f2f2f2; }
+    .box { background:#fff; padding:25px; border-radius:10px; width:320px; box-shadow:0 5px 20px rgba(0,0,0,.1); }
+    input, button { width:100%; padding:10px; margin-top:10px; }
   </style>
 </head>
 <body>
@@ -20,10 +19,11 @@
       <button type="submit">Login</button>
     </form>
 
-    <p style="margin-top:10px;font-size:12px;color:#555">
-      Default user: <b>admin</b><br>
-      Password: <b>12345</b>
+    <p style="font-size:12px;margin-top:8px">
+      Default user: <b>admin</b> — Pass: <b>12345</b>
     </p>
+
+    <a href="/signup">Create an account</a>
   </div>
 </body>
 </html>
