@@ -1,15 +1,14 @@
 {
-  "name": "railway-secure-chat",
+  "name": "chat-app",
   "version": "1.0.0",
+  "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.0",
-    "express-session": "^1.17.3",
-    "socket.io": "^4.7.5",
-    "pg": "^8.12.0",
     "bcryptjs": "^2.4.3",
-    "path": "^0.12.7"
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7"
   }
 }

@@ -1,57 +1,39 @@
 <!DOCTYPE html>
 <html>
+<head>
+  <title>Chat Room</title>
+  <meta charset="UTF-8" />
+  <style>
+    body { font-family:Arial;background:#f5f5f5;padding:20px; }
+    #chat { height:300px; overflow-y:auto; border:1px solid #ccc; background:#fff; padding:10px; }
+    #msg { width:80%; padding:8px; }
+  </style>
+</head>
 <body>
-  <h3>Secure Private Chat</h3>
 
-  <p>
-    Logged in as <b id="me"></b> —
-    <a href="/logout">Logout</a>
-  </p>
+<h2>Welcome to Chat</h2>
 
-  <label>Send to:</label>
-  <input id="receiver" placeholder="username" />
+<div id="chat"></div>
 
-  <ul id="messages"></ul>
+<br>
 
-  <form id="form">
-    <input id="input" autocomplete="off" />
-    <button>Send</button>
-  </form>
+<input id="msg" placeholder="Type message..." />
+<button onclick="send()">Send</button>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const me = document.getElementById("me");
-    const receiver = document.getElementById("receiver");
-    const messages = document.getElementById("messages");
-    const form = document.getElementById("form");
-    const input = document.getElementById("input");
+<script>
+  const chat = document.getElementById("chat");
 
-    fetch("/whoami")
-      .then(r => r.json())
-      .then(d => (me.textContent = d.user));
+  function send() {
+    const msg = document.getElementById("msg");
+    if (!msg.value.trim()) return;
 
-    function addMsg(msg) {
-      const li = document.createElement("li");
-      li.textContent = `${msg.from} ➜ ${msg.to}: ${msg.message}`;
-      messages.appendChild(li);
-    }
+    const div = document.createElement("div");
+    div.textContent = msg.value;
+    chat.appendChild(div);
 
-    socket.on("chat-history", list => list.forEach(addMsg));
+    msg.value = "";
+  }
+</script>
 
-    socket.on("chat message", addMsg);
-
-    form.addEventListener("submit", e => {
-      e.preventDefault();
-      if (!input.value || !receiver.value) return;
-
-      socket.emit("private-message", {
-        to: receiver.value,
-        message: input.value
-      });
-
-      input.value = "";
-    });
-  </script>
 </body>
 </html>
