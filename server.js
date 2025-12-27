@@ -27,12 +27,22 @@ function saveJSON(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-// ---------- persistent data ----------
-let users = loadJSON(USERS_FILE, [
-  { id: 1, username: "admin", password: "admin123", role: "admin" }
-]);
+import pg from "pg";
+const { Pool } = pg;
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
-let messages = loadJSON(MSG_FILE, []);
+// ---------- persistent data ----------
+async function getUsers() {
+  const res = await pool.query("SELECT * FROM users");
+  return res.rows;
+}
+
+async function getMessages() {
+  const res = await pool.query('SELECT "from", room, text, timestamp FROM messages ORDER BY timestamp ASC');
+  return res.rows;
+}
 
 // ---------- express / socket ----------
 const app = express();
@@ -51,25 +61,20 @@ function isAdmin(u, p) {
 }
 
 // ---------- LOGIN ----------
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
 
-  const user = users.find(
-    u => u.username === username && u.password === password
-  );
+  const result = await pool.query("SELECT id, username, role FROM users WHERE username = $1 AND password = $2", [username, password]);
+  const user = result.rows[0];
 
   if (!user)
     return res.status(401).json({ error: "Invalid credentials" });
 
-  return res.status(200).json({
-    id: user.id,
-    username: user.username,
-    role: user.role
-  });
+  return res.status(200).json(user);
 });
 
 // ---------- ADMIN: CREATE USER ----------
-app.post("/api/admin/users", (req, res) => {
+app.post("/api/admin/users", async (req, res) => {
   const { adminUser, adminPass, username, password } = req.body;
 
   if (!isAdmin(adminUser, adminPass))
@@ -78,26 +83,26 @@ app.post("/api/admin/users", (req, res) => {
   if (!username || !password)
     return res.status(400).json({ error: "Missing fields" });
 
-  const exists = users.find(u => u.username === username);
-  if (exists)
-    return res.status(409).json({ error: "User already exists" });
-
-  const id = users.length + 1;
-
-  const newUser = { id, username, password, role: "user" };
-  users.push(newUser);
-  saveJSON(USERS_FILE, users);
-
-  return res.status(201).json({ success: true, user: newUser });
+  try {
+    const result = await pool.query(
+      "INSERT INTO users (username, password, role) VALUES ($1, $2, 'user') RETURNING id, username, role",
+      [username, password]
+    );
+    return res.status(201).json({ success: true, user: result.rows[0] });
+  } catch (err) {
+    if (err.code === "23505") return res.status(409).json({ error: "User already exists" });
+    throw err;
+  }
 });
 
 // ---------- LIST USERS (ADMIN) ----------
-app.post("/api/admin/list-users", (req, res) => {
+app.post("/api/admin/list-users", async (req, res) => {
   const { adminUser, adminPass } = req.body;
 
   if (!isAdmin(adminUser, adminPass))
     return res.status(403).json({ error: "Admin auth failed" });
 
+  const users = await getUsers();
   return res.status(200).json(users.map(u => ({
     id: u.id,
     username: u.username,
@@ -106,7 +111,8 @@ app.post("/api/admin/list-users", (req, res) => {
 });
 
 // ---------- MESSAGES API ----------
-app.get("/api/messages", (req, res) => {
+app.get("/api/messages", async (req, res) => {
+  const messages = await getMessages();
   res.status(200).json(messages);
 });
 
@@ -131,14 +137,13 @@ io.on("connection", socket => {
     socket.to(room).emit("typing", user);
   });
 
-  socket.on("message", data => {
-    const msg = {
-      ...data,
-      timestamp: new Date().toISOString()
-    };
-
-    messages.push(msg);
-    saveJSON(MSG_FILE, messages);
+  socket.on("message", async data => {
+    const { from, room, text } = data;
+    const result = await pool.query(
+      'INSERT INTO messages ("from", room, text) VALUES ($1, $2, $3) RETURNING "from", room, text, timestamp',
+      [from, room, text]
+    );
+    const msg = result.rows[0];
 
     if (data.room)
       io.to(data.room).emit("message", msg);
@@ -160,29 +165,34 @@ app.get("*", (req, res) => {
 });
 
 // ---------- ADMIN: DELETE USER ----------
-app.post("/api/admin/delete-user", (req, res) => {
+app.post("/api/admin/delete-user", async (req, res) => {
   const { adminUser, adminPass, username } = req.body;
   if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Admin auth failed" });
   if (username === "admin") return res.status(400).json({ error: "Cannot delete admin" });
-  users = users.filter(u => u.username !== username);
-  saveJSON(USERS_FILE, users);
+  
+  await pool.query("DELETE FROM users WHERE username = $1", [username]);
   return res.status(200).json({ success: true });
 });
 
 // ---------- USER: UPDATE PROFILE ----------
-app.post("/api/user/update", (req, res) => {
+app.post("/api/user/update", async (req, res) => {
   const { currentUsername, newUsername, newPassword } = req.body;
-  const userIndex = users.findIndex(u => u.username === currentUsername);
-  if (userIndex === -1) return res.status(404).json({ error: "User not found" });
   
-  if (newUsername && newUsername !== currentUsername) {
-    if (users.find(u => u.username === newUsername)) return res.status(409).json({ error: "Username taken" });
-    users[userIndex].username = newUsername;
+  try {
+    if (newUsername && newUsername !== currentUsername) {
+      await pool.query("UPDATE users SET username = $1 WHERE username = $2", [newUsername, currentUsername]);
+    }
+    if (newPassword) {
+      const usernameToUpdate = newUsername || currentUsername;
+      await pool.query("UPDATE users SET password = $1 WHERE username = $2", [newPassword, usernameToUpdate]);
+    }
+    
+    const result = await pool.query("SELECT id, username, role FROM users WHERE username = $1", [newUsername || currentUsername]);
+    return res.status(200).json({ success: true, user: result.rows[0] });
+  } catch (err) {
+    if (err.code === "23505") return res.status(409).json({ error: "Username taken" });
+    throw err;
   }
-  if (newPassword) users[userIndex].password = newPassword;
-  
-  saveJSON(USERS_FILE, users);
-  return res.status(200).json({ success: true, user: users[userIndex] });
 });
 
 const PORT = process.env.PORT || 5000;
