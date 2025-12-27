@@ -64,7 +64,15 @@ async function initDB() {
       await client.query("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
     }
     if (!columns.includes('id')) {
-      await client.query("ALTER TABLE users ADD COLUMN id SERIAL PRIMARY KEY");
+      await client.query("ALTER TABLE users ADD COLUMN id SERIAL");
+      // Only set as primary key if no primary key exists
+      const pkCheck = await client.query(`
+        SELECT count(*) FROM information_schema.table_constraints 
+        WHERE table_name='users' AND constraint_type='PRIMARY KEY'
+      `);
+      if (pkCheck.rows[0].count == 0) {
+        await client.query("ALTER TABLE users ADD PRIMARY KEY (id)");
+      }
     }
 
     // Create messages table
