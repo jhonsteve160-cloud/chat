@@ -159,6 +159,32 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public/index.html"));
 });
 
+// ---------- ADMIN: DELETE USER ----------
+app.post("/api/admin/delete-user", (req, res) => {
+  const { adminUser, adminPass, username } = req.body;
+  if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Admin auth failed" });
+  if (username === "admin") return res.status(400).json({ error: "Cannot delete admin" });
+  users = users.filter(u => u.username !== username);
+  saveJSON(USERS_FILE, users);
+  return res.status(200).json({ success: true });
+});
+
+// ---------- USER: UPDATE PROFILE ----------
+app.post("/api/user/update", (req, res) => {
+  const { currentUsername, newUsername, newPassword } = req.body;
+  const userIndex = users.findIndex(u => u.username === currentUsername);
+  if (userIndex === -1) return res.status(404).json({ error: "User not found" });
+  
+  if (newUsername && newUsername !== currentUsername) {
+    if (users.find(u => u.username === newUsername)) return res.status(409).json({ error: "Username taken" });
+    users[userIndex].username = newUsername;
+  }
+  if (newPassword) users[userIndex].password = newPassword;
+  
+  saveJSON(USERS_FILE, users);
+  return res.status(200).json({ success: true, user: users[userIndex] });
+});
+
 const PORT = 5000;
 server.listen(PORT, "0.0.0.0", () =>
   console.log("Server running on port", PORT)
