@@ -49,6 +49,24 @@ async function initDB() {
       )
     `);
 
+    // Handle existing users table that might have different columns (Railway scenario)
+    const tableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'");
+    const columns = tableInfo.rows.map(r => r.column_name);
+    
+    if (!columns.includes('password')) {
+      if (columns.includes('password_hash')) {
+        await client.query("ALTER TABLE users RENAME COLUMN password_hash TO password");
+      } else {
+        await client.query("ALTER TABLE users ADD COLUMN password TEXT");
+      }
+    }
+    if (!columns.includes('role')) {
+      await client.query("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
+    }
+    if (!columns.includes('id')) {
+      await client.query("ALTER TABLE users ADD COLUMN id SERIAL PRIMARY KEY");
+    }
+
     // Create messages table
     await client.query(`
       CREATE TABLE IF NOT EXISTS messages (
@@ -59,6 +77,13 @@ async function initDB() {
         timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Handle existing messages table
+    const msgTableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'");
+    const msgColumns = msgTableInfo.rows.map(r => r.column_name);
+    if (!msgColumns.includes('from')) {
+      await client.query('ALTER TABLE messages ADD COLUMN "from" TEXT');
+    }
 
     // Ensure admin exists
     await client.query(`
