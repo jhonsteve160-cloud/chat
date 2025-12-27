@@ -1,21 +1,31 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width">
 <title>Secure Chat</title>
 
 <style>
-body { font-family: system-ui; background:#0f172a; color:#e5e7eb; margin:0; }
-.container { max-width:900px; margin:auto; padding:16px; }
-.card { background:#020617; border-radius:16px; padding:16px; }
-input, button, select {
-  padding:10px; border-radius:10px; border:none; margin:4px 0;
+body { margin:0; font-family: Inter, system-ui;
+  background:#f5f5f5; color:#0f172a; }
+.container { max-width:960px; margin:auto; padding:12px; }
+.card { background:white; border-radius:18px; padding:14px;
+  box-shadow:0 10px 30px rgba(0,0,0,.08); }
+input,button,select{
+  padding:10px;border-radius:12px;border:1px solid #d1d5db;
+  width:100%;margin:4px 0;
 }
-#chat { height:420px; overflow-y:auto; background:#020617; border-radius:12px; padding:10px; }
-.msg { padding:8px; margin:4px 0; background:#020617; border:1px solid #1f2937; border-radius:12px; }
-.small { opacity:0.6; font-size:12px; }
-.typing { font-style:italic; opacity:0.6; }
+#chat{height:420px;overflow-y:auto;padding:6px;
+  background:#fafafa;border-radius:12px;border:1px solid #e5e7eb;}
+.msg{padding:8px;margin:4px 0;border-radius:12px;
+  background:white;border:1px solid #e5e7eb;}
+.small{font-size:12px;opacity:.7}
+.row{display:flex;gap:6px}
+.badge{padding:4px 8px;border-radius:10px;background:#e5e7eb}
+#online span{margin-right:6px}
+@media(max-width:640px){
+  #chat{height:360px}
+}
 </style>
 </head>
 
@@ -31,21 +41,39 @@ input, button, select {
   <button onclick="login()">Login</button>
 </div>
 
+<div id="adminPanel" style="display:none">
+  <h3>Admin Dashboard</h3>
+
+  <div class="row">
+    <input id="newUser" placeholder="new username">
+    <input id="newPass" placeholder="password">
+  </div>
+  <button onclick="createUser()">Create User</button>
+
+  <p><b>Users</b></p>
+  <div id="userList"></div>
+</div>
+
 <div id="chatUI" style="display:none">
 
-  <div>
+  <div class="row">
     <span>Logged in as <b id="me"></b></span>
+    <span id="presenceCount" class="badge"></span>
   </div>
+
+  <div id="online"></div>
 
   <select id="room">
     <option value="global">Global Room</option>
   </select>
 
   <div id="chat"></div>
-  <div class="typing" id="typing"></div>
+  <div id="typing" class="small"></div>
 
-  <input id="msg" placeholder="Type message…">
-  <button onclick="sendMessage()">Send</button>
+  <div class="row">
+    <input id="msg" placeholder="Type a message…">
+    <button onclick="sendMessage()">Send</button>
+  </div>
 </div>
 
 </div>
@@ -56,17 +84,15 @@ input, button, select {
 const socket = io();
 let user = null;
 
-function login(){
-  fetch("/login", {
+function login() {
+  fetch("/api/login", {
     method:"POST",
     headers:{ "Content-Type":"application/json" },
     body:JSON.stringify({
       username: username.value,
       password: password.value
     })
-  })
-  .then(r=>r.json())
-  .then(d=>{
+  }).then(r=>r.json()).then(d=>{
     if(d.error){ alert(d.error); return; }
 
     user = d;
@@ -75,53 +101,112 @@ function login(){
     loginBox.style.display="none";
     chatUI.style.display="block";
 
+    if(d.role === "admin"){
+      adminPanel.style.display="block";
+      loadUsers();
+    }
+
+    socket.emit("join", { username:d.username });
     socket.emit("joinRoom","global");
+
     loadMessages();
   });
 }
 
 function loadMessages(){
-  fetch("/messages").then(r=>r.json()).then(msgs=>{
-    msgs.forEach(renderMessage);
-  });
+  fetch("/api/messages")
+  .then(r=>r.json())
+  .then(msgs=>msgs.forEach(renderMessage));
 }
 
 function renderMessage(m){
-  const div = document.createElement("div");
-  div.className="msg";
-  div.innerHTML = `
+  const d = document.createElement("div");
+  d.className="msg";
+  d.innerHTML = `
     <b>${m.from}</b> → <b>${m.room || "global"}</b><br>
     ${m.text}<br>
     <span class="small">${new Date(m.timestamp).toLocaleString()}</span>
   `;
-  chat.appendChild(div);
+  chat.appendChild(d);
   chat.scrollTop = chat.scrollHeight;
 }
 
+// presence
+socket.on("presence", list=>{
+  online.innerHTML = "";
+  presenceCount.textContent = list.length + " online";
+
+  list.forEach(u=>{
+    const s = document.createElement("span");
+    s.textContent = "• " + u.username;
+    online.appendChild(s);
+  });
+});
+
+// typing
 msg.addEventListener("input", ()=>{
   socket.emit("typing", room.value, user.username);
 });
 
 socket.on("typing", u=>{
   typing.textContent = `${u} is typing…`;
-  setTimeout(()=> typing.textContent="", 1200);
+  setTimeout(()=> typing.textContent="", 900);
 });
 
+// receive message
 socket.on("message", renderMessage);
 
+// send message
 function sendMessage(){
-  const payload = {
-    from: user.username,
-    room: room.value === "global" ? null : room.value,
-    text: msg.value.trim()
-  };
+  const text = msg.value.trim();
+  if(!text) return;
 
-  if(!payload.text) return;
+  const payload = {
+    from:user.username,
+    room: room.value === "global" ? null : room.value,
+    text
+  };
 
   socket.emit("message", payload);
   msg.value="";
 }
-</script>
 
+// ---- admin ----
+function createUser(){
+  fetch("/api/admin/users", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({
+      adminUser:"admin",
+      adminPass:"admin123",
+      username:newUser.value,
+      password:newPass.value
+    })
+  }).then(r=>r.json()).then(d=>{
+    if(d.error){ alert(d.error); return; }
+    loadUsers();
+    newUser.value="";
+    newPass.value="";
+  });
+}
+
+function loadUsers(){
+  fetch("/api/admin/list-users", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({
+      adminUser:"admin",
+      adminPass:"admin123"
+    })
+  }).then(r=>r.json()).then(list=>{
+    userList.innerHTML="";
+    list.forEach(u=>{
+      const div=document.createElement("div");
+      div.textContent = `${u.username} (${u.role})`;
+      userList.appendChild(div);
+    });
+  });
+}
+</script>
 </body>
 </html>
