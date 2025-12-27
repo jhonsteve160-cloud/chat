@@ -33,6 +33,51 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+// ---------- DB INIT ----------
+async function initDB() {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    
+    // Create users table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT DEFAULT 'user'
+      )
+    `);
+
+    // Create messages table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        "from" TEXT NOT NULL,
+        room TEXT,
+        text TEXT NOT NULL,
+        timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Ensure admin exists
+    await client.query(`
+      INSERT INTO users (username, password, role)
+      VALUES ('admin', 'admin123', 'admin')
+      ON CONFLICT (username) DO NOTHING
+    `);
+
+    await client.query("COMMIT");
+    console.log("Database initialized successfully");
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("Database initialization failed:", e);
+  } finally {
+    client.release();
+  }
+}
+initDB();
+
 // ---------- persistent data ----------
 async function getUsers() {
   const res = await pool.query("SELECT * FROM users");
