@@ -1,0 +1,101 @@
+Starting Container
+Server running on port 8080
+npm warn config production Use `--omit=dev` instead.
+> secure-chat@1.0.0 start
+> node server.js
+/app/node_modules/pg-pool/index.js:45
+    Error.captureStackTrace(err)
+          ^
+error: column "id" does not exist
+    at /app/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///app/server.js:67:18 {
+  length: 101,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '8',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3716',
+  routine: 'errorMissingColumn'
+}
+Node.js v22.21.1
+npm warn config production Use `--omit=dev` instead.
+> secure-chat@1.0.0 start
+> node server.js
+  internalQuery: undefined,
+  where: undefined,
+Server running on port 8080
+    at /app/node_modules/pg-pool/index.js:45:11
+  schema: undefined,
+/app/node_modules/pg-pool/index.js:45
+  table: undefined,
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    Error.captureStackTrace(err)
+  column: undefined,
+    at async getMessages (file:///app/server.js:43:15)
+          ^
+  dataType: undefined,
+    at async file:///app/server.js:115:20 {
+  constraint: undefined,
+error: column "from" does not exist
+  length: 103,
+  file: 'parse_relation.c',
+  severity: 'ERROR',
+  line: '3716',
+  code: '42703',
+  routine: 'errorMissingColumn'
+  detail: undefined,
+  hint: undefined,
+  position: '8',
+  internalPosition: undefined,
+error: column "from" does not exist
+  position: '8',
+    at /app/node_modules/pg-pool/index.js:45:11
+  internalPosition: undefined,
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async getMessages (file:///app/server.js:43:15)
+  internalQuery: undefined,
+}
+    at async file:///app/server.js:115:20 {
+  where: undefined,
+  length: 103,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+Node.js v22.21.1
+npm warn config production Use `--omit=dev` instead.
+> secure-chat@1.0.0 start
+> node server.js
+Server running on port 8080
+  severity: 'ERROR',
+/app/node_modules/pg-pool/index.js:45
+  code: '42703',
+    Error.captureStackTrace(err)
+  detail: undefined,
+          ^
+  hint: undefined,
+  dataType: undefined,
+Node.js v22.21.1
+  constraint: undefined,
+  file: 'parse_relation.c',
+npm warn config production Use `--omit=dev` instead.
+  line: '3716',
+  routine: 'errorMissingColumn'
+> secure-chat@1.0.0 start
+> node server.js
+}
+Server running on port 8080
+/app/node_modules/pg-pool/index.js:45
+    Error.captureStackTrace(err)
+  schema: undefined,
+          ^
