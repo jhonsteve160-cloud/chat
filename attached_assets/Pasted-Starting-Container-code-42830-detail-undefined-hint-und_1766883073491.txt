@@ -1,0 +1,106 @@
+Starting Container
+  code: '42830',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'tablecmds.c',
+  line: '12165',
+  routine: 'transformFkeyCheckAttrs'
+}
+npm warn config production Use `--omit=dev` instead.
+> secure-chat@1.0.0 start
+> node server.js
+Server running on port 8080
+Database initialization failed: error: there is no unique constraint matching given keys for referenced table "users"
+    at /app/node_modules/pg/lib/client.js:545:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async initDB (file:///app/server.js:126:5) {
+  length: 151,
+  severity: 'ERROR',
+    at Socket._onclose (/app/node_modules/socket.io/dist/socket.js:554:14)
+    at Client.onclose (/app/node_modules/socket.io/dist/client.js:253:20)
+    at Socket.emit (node:events:531:35)
+    at Socket.onClose (/app/node_modules/engine.io/build/socket.js:320:18)
+    at Object.onceWrapper (node:events:633:28)
+    at WebSocket.emit (node:events:519:28)
+    at WebSocket.onClose (/app/node_modules/engine.io/build/transport.js:114:14)
+Node.js v22.21.1
+npm warn config production Use `--omit=dev` instead.
+> secure-chat@1.0.0 start
+> node server.js
+Server running on port 8080
+Database initialization failed: error: there is no unique constraint matching given keys for referenced table "users"
+file:///app/server.js:315
+    at /app/node_modules/pg/lib/client.js:545:17
+    onlineUsers.delete(socket.id);
+    ^
+ReferenceError: onlineUsers is not defined
+    at Socket.<anonymous> (file:///app/server.js:315:5)
+    at Socket.emit (node:events:519:28)
+    at Socket.emitReserved (/app/node_modules/socket.io/dist/typed-events.js:56:22)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async initDB (file:///app/server.js:126:5) {
+  length: 151,
+  severity: 'ERROR',
+  code: '42830',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'tablecmds.c',
+  line: '12165',
+  routine: 'transformFkeyCheckAttrs'
+}
+file:///app/server.js:315
+  constraint: undefined,
+    onlineUsers.delete(socket.id);
+Database initialization failed: error: there is no unique constraint matching given keys for referenced table "users"
+  file: 'tablecmds.c',
+Node.js v22.21.1
+  hint: undefined,
+    ^
+    at /app/node_modules/pg/lib/client.js:545:17
+npm warn config production Use `--omit=dev` instead.
+  line: '12165',
+  position: undefined,
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+  severity: 'ERROR',
+ReferenceError: onlineUsers is not defined
+  internalPosition: undefined,
+  internalQuery: undefined,
+> secure-chat@1.0.0 start
+    at async initDB (file:///app/server.js:126:5) {
+    at Socket.<anonymous> (file:///app/server.js:315:5)
+  code: '42830',
+  where: undefined,
+> node server.js
+  schema: undefined,
+  length: 151,
+  detail: undefined,
+    at Socket.emit (node:events:519:28)
+  table: undefined,
+Server running on port 8080
+  routine: 'transformFkeyCheckAttrs'
+  column: undefined,
+}
+  dataType: undefined,
+    at Socket.emitReserved (/app/node_modules/socket.io/dist/typed-events.js:56:22)
+    at Socket._onclose (/app/node_modules/socket.io/dist/socket.js:554:14)
+    at Client.onclose (/app/node_modules/socket.io/dist/client.js:253:20)
+    at Socket.emit (node:events:531:35)
+    at Socket.onClose (/app/node_modules/engine.io/build/socket.js:320:18)
