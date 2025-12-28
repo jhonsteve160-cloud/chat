@@ -230,15 +230,24 @@ io.on("connection", socket => {
       const { from, room, text, receiverId } = data;
       const senderRes = await pool.query("SELECT id FROM users WHERE username = $1", [from]);
       const senderId = senderRes.rows[0]?.id;
-      const res = await pool.query('INSERT INTO messages ("from", room, text, receiver_id) VALUES ($1, $2, $3, $4) RETURNING *', [from, room, text, receiverId]);
+      
+      // Ensure we don't mix global and private. If receiverId exists, room should be null.
+      const dbRoom = receiverId ? null : (room || 'global');
+      
+      const res = await pool.query('INSERT INTO messages ("from", room, text, receiver_id) VALUES ($1, $2, $3, $4) RETURNING *', [from, dbRoom, text, receiverId]);
       const msg = { ...res.rows[0], sender_id: senderId };
+      
       if (receiverId) {
+        // Send to receiver and sender for private chats
         io.to(`user_${receiverId}`).emit("message", msg);
-        io.to(`user_${senderId}`).emit("message", msg);
+        if (senderId !== receiverId) {
+          io.to(`user_${senderId}`).emit("message", msg);
+        }
       } else {
+        // Broadcast global messages
         io.emit("message", msg);
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Socket message error:", e); }
   });
 
   socket.on("disconnect", () => {

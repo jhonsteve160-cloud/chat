@@ -174,10 +174,12 @@ function loadMessages(){
     .then(msgs => {
       msgs.forEach(m => {
         if (selected === 'global') {
-          if (!m.receiver_id) renderMessage(m);
+          if (!m.receiver_id && m.room === 'global') renderMessage(m);
         } else {
           const friendId = parseInt(selected);
-          if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) {
+          // Private chat logic: (me -> friend) OR (friend -> me)
+          if ((m.receiver_id === friendId && m.sender_id === user.id) || 
+              (m.receiver_id === user.id && m.sender_id === friendId)) {
             renderMessage(m);
           }
         }
@@ -233,10 +235,14 @@ socket.on("typing", u=>{
 
 socket.on("message", (m) => {
   const selected = room.value;
-  if (selected === 'global' && !m.receiver_id) renderMessage(m);
-  else if (selected !== 'global') {
+  if (selected === 'global' && !m.receiver_id && m.room === 'global') {
+    renderMessage(m);
+  } else if (selected !== 'global') {
      const friendId = parseInt(selected);
-     if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) renderMessage(m);
+     if ((m.receiver_id === friendId && m.sender_id === user.id) || 
+         (m.receiver_id === user.id && m.sender_id === friendId)) {
+       renderMessage(m);
+     }
   }
 });
 
