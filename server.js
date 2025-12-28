@@ -61,7 +61,11 @@ async function initDB() {
       `);
       if (pkColumnCheck.rows.length === 0 || pkColumnCheck.rows[0].column_name !== 'id') {
         // If PK is on something else, ensure 'id' is at least unique so it can be referenced
-        await client.query("ALTER TABLE users ADD CONSTRAINT IF NOT EXISTS users_id_unique UNIQUE (id)");
+        try {
+          await client.query("ALTER TABLE users ADD CONSTRAINT users_id_unique UNIQUE (id)");
+        } catch (err) {
+          if (err.code !== '42P07') throw err; // Ignore if already exists
+        }
       }
     }
 

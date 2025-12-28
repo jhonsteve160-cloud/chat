@@ -1,0 +1,114 @@
+Starting Container
+  file: 'scan.l',
+  line: '1244',
+  routine: 'scanner_yyerror'
+}
+npm warn config production Use `--omit=dev` instead.
+> secure-chat@1.0.0 start
+> node server.js
+Server running on port 8080
+Database initialization failed: error: syntax error at or near "NOT"
+    at /app/node_modules/pg/lib/client.js:545:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async initDB (file:///app/server.js:64:9) {
+  length: 92,
+  severity: 'ERROR',
+  code: '42601',
+  detail: undefined,
+  hint: undefined,
+  position: '37',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+Load friends failed: error: column f.status does not exist
+    at /app/node_modules/pg-pool/index.js:45:11
+  line: '3716',
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+  routine: 'errorMissingColumn'
+    at async file:///app/server.js:249:20 {
+}
+  length: 107,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '100',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+Load friends failed: error: column f.status does not exist
+  routine: 'errorMissingColumn'
+    at /app/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+}
+  code: '42703',
+    at async file:///app/server.js:249:20 {
+  length: 107,
+  severity: 'ERROR',
+  detail: undefined,
+  hint: undefined,
+  position: '100',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3716',
+Load friends failed: error: column f.status does not exist
+    at async file:///app/server.js:249:20 {
+    at /app/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+  length: 107,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '100',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3716',
+  routine: 'errorMissingColumn'
+}
+Load requests failed: error: column f.status does not exist
+    at /app/node_modules/pg-pool/index.js:45:11
+  severity: 'ERROR',
+  position: '100',
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async file:///app/server.js:236:20 {
+  internalPosition: undefined,
+  code: '42703',
+  internalQuery: undefined,
+  length: 107,
+  detail: undefined,
+  where: undefined,
+  hint: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3716',
+  routine: 'errorMissingColumn'
