@@ -153,13 +153,17 @@ app.post("/api/friends/request", async (req, res) => {
   } catch (e) { res.status(500).json({ error: "Failed" }); }
 });
 
-app.post("/api/friends/accept", async (req, res) => {
+app.post("/api/admin/message-direct", async (req, res) => {
   const { userId, friendId } = req.body;
   try {
-    await pool.query("UPDATE friends SET status = 'accepted' WHERE user_id = $1 AND friend_id = $2", [friendId, userId]);
+    // Automatically accept friendship on both sides
     await pool.query("INSERT INTO friends (user_id, friend_id, status) VALUES ($1, $2, 'accepted') ON CONFLICT (user_id, friend_id) DO UPDATE SET status = 'accepted'", [userId, friendId]);
+    await pool.query("INSERT INTO friends (user_id, friend_id, status) VALUES ($1, $2, 'accepted') ON CONFLICT (user_id, friend_id) DO UPDATE SET status = 'accepted'", [friendId, userId]);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: "Failed" }); }
+  } catch (e) { 
+    console.error("Admin direct friend error:", e);
+    res.status(500).json({ error: "Failed" }); 
+  }
 });
 
 app.get("/api/friends/requests/:userId", async (req, res) => {

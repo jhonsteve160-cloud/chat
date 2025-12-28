@@ -276,13 +276,17 @@ function searchUsers() {
 }
 
 function startDirectChat(id, username) {
-  // Ensure the friend appears in the dropdown/list for the admin immediately
-  if (!friendsListGlobal.some(f => f.id === id)) {
-    friendsListGlobal.push({ id, username });
-    updateFriendsUI();
-  }
-  room.value = id;
-  loadMessages();
+  fetch("/api/admin/message-direct", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: user.id, friendId: id })
+  }).then(() => {
+    // Refresh friends list to show the new connection
+    loadFriends().then(() => {
+      room.value = id;
+      loadMessages();
+    });
+  });
 }
 
 function updateFriendsUI() {
