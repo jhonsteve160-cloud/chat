@@ -245,8 +245,12 @@ io.on("connection", socket => {
     socket.join(room);
   });
 
-  socket.on("typing", (room, user) => {
-    socket.to(room).emit("typing", user);
+  socket.on("typing", (roomName, user) => {
+    if (roomName !== 'global' && !isNaN(roomName)) {
+      socket.to(`user_${roomName}`).emit("typing", user);
+    } else {
+      socket.to(roomName).emit("typing", user);
+    }
   });
 
   socket.on("message", async data => {

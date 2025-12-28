@@ -160,9 +160,12 @@ function login() {
 function loadMessages(){
   chat.innerHTML = "";
   const selected = room.value;
-  fetch(`/api/messages?userId=${user.id}`)
+  let url = `/api/messages?userId=${user.id}`;
+  
+  fetch(url)
     .then(r => r.json())
     .then(msgs => {
+      console.log("Loaded messages from DB:", msgs);
       msgs.forEach(m => {
         if (selected === 'global') {
           if (!m.receiver_id) renderMessage(m);
