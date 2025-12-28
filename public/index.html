@@ -71,7 +71,7 @@ textarea#msg { height: 60px; resize: none; }
   
   <div class="tabs">
     <div class="tab active" onclick="switchTab('global')">Global Chat</div>
-    <div class="tab" onclick="switchTab('friends')">Friends</div>
+    <div class="tab" onclick="switchTab('friends')">Friends & Requests</div>
   </div>
 
   <div id="online" style="margin-bottom: 10px; padding: 8px; background: #0f172a; border-radius: 8px; font-size: 13px;"></div>
@@ -82,6 +82,12 @@ textarea#msg { height: 60px; resize: none; }
       <button onclick="searchUsers()" style="width: auto;">Search</button>
     </div>
     <div id="searchResults" style="margin-top: 5px;"></div>
+    
+    <div id="requestSection" style="display:none; border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px;">
+      <p><b>Friend Requests</b></p>
+      <div id="requestsList" style="display: grid; gap: 8px;"></div>
+    </div>
+
     <p><b>My Friends</b></p>
     <div id="friendsList" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
   </div>
@@ -115,6 +121,7 @@ textarea#msg { height: 60px; resize: none; }
 const socket = io();
 let user = null;
 let currentTab = 'global';
+let friends = [];
 
 function switchTab(t) {
   currentTab = t;
@@ -124,6 +131,7 @@ function switchTab(t) {
   if (t === 'friends') {
     friendsView.style.display = 'block';
     loadFriends();
+    loadRequests();
   } else {
     friendsView.style.display = 'none';
     room.value = 'global';
@@ -135,10 +143,7 @@ function login() {
   fetch("/api/login", {
     method:"POST",
     headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({
-      username: username.value,
-      password: password.value
-    })
+    body:JSON.stringify({ username: username.value, password: password.value })
   }).then(r=>r.json()).then(d=>{
     if(d.error){ alert(d.error); return; }
     user = d;
@@ -160,12 +165,9 @@ function login() {
 function loadMessages(){
   chat.innerHTML = "";
   const selected = room.value;
-  let url = `/api/messages?userId=${user.id}`;
-  
-  fetch(url)
+  fetch(`/api/messages?userId=${user.id}`)
     .then(r => r.json())
     .then(msgs => {
-      console.log("Loaded messages from DB:", msgs);
       msgs.forEach(m => {
         if (selected === 'global') {
           if (!m.receiver_id) renderMessage(m);
@@ -194,24 +196,23 @@ function renderMessage(m){
 }
 
 socket.on("presence", list=>{
-  online.innerHTML = "<b>Online:</b> ";
-  presenceCount.textContent = list.length + " online";
-  list.forEach(u=>{
-    const s = document.createElement("span");
-    s.textContent = "• " + u.username;
-    online.appendChild(s);
-  });
+  const activeFriends = list.filter(u => friends.some(f => f.id === u.id));
+  
+  if (user.role === 'admin') {
+    online.innerHTML = "<b>All Active Users:</b> " + list.map(u => u.username).join(", ");
+    presenceCount.textContent = list.length + " active users";
+  } else {
+    online.innerHTML = "<b>Online Friends:</b> " + (activeFriends.length > 0 ? activeFriends.map(u => u.username).join(", ") : "None");
+    presenceCount.textContent = activeFriends.length + " friends online";
+  }
 });
 
 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
 msg.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
-    if (isMobile) return; // Always new line on mobile
-    if (!e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (isMobile) return;
+    if (!e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
 });
 
@@ -230,9 +231,7 @@ socket.on("message", (m) => {
   if (selected === 'global' && !m.receiver_id) renderMessage(m);
   else if (selected !== 'global') {
      const friendId = parseInt(selected);
-     if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) {
-       renderMessage(m);
-     }
+     if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) renderMessage(m);
   }
 });
 
@@ -240,12 +239,7 @@ function sendMessage(){
   const text = msg.value.trim();
   if(!text || !user) return;
   const isPrivate = room.value !== 'global';
-  const payload = {
-    from: user.username,
-    room: isPrivate ? null : 'global',
-    text: text,
-    receiverId: isPrivate ? parseInt(room.value) : null
-  };
+  const payload = { from: user.username, room: isPrivate ? null : 'global', text: text, receiverId: isPrivate ? parseInt(room.value) : null };
   socket.emit("message", payload);
   msg.value="";
 }
@@ -262,21 +256,50 @@ function searchUsers() {
     list.forEach(u => {
       const div = document.createElement("div");
       div.className = "row";
-      div.innerHTML = `<span>${u.username}</span><button onclick="addFriend(${u.id})" style="width:auto">Add Friend</button>`;
+      div.innerHTML = `<span>${u.username}</span><button onclick="sendRequest(${u.id})" style="width:auto">Add Friend</button>`;
       searchResults.appendChild(div);
     });
   });
 }
 
-function addFriend(id) {
-  fetch("/api/friends/add", {
+function sendRequest(id) {
+  fetch("/api/friends/request", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ userId: user.id, friendId: id })
   }).then(() => {
-    loadFriends();
+    alert("Request sent!");
     searchResults.innerHTML = "";
     userSearch.value = "";
+  });
+}
+
+function loadRequests() {
+  fetch(`/api/friends/requests/${user.id}`)
+    .then(r => r.json())
+    .then(list => {
+      requestsList.innerHTML = "";
+      requestSection.style.display = list.length > 0 ? "block" : "none";
+      list.forEach(r => {
+        const div = document.createElement("div");
+        div.className = "row";
+        div.style.background = "#0f172a";
+        div.style.padding = "8px";
+        div.style.borderRadius = "8px";
+        div.innerHTML = `<span style="flex:1">${r.username}</span><button onclick="acceptRequest(${r.id})" style="width:auto; padding: 4px 10px;">Accept</button>`;
+        requestsList.appendChild(div);
+      });
+    });
+}
+
+function acceptRequest(id) {
+  fetch("/api/friends/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: user.id, friendId: id })
+  }).then(() => {
+    loadRequests();
+    loadFriends();
   });
 }
 
@@ -284,6 +307,7 @@ function loadFriends() {
   fetch(`/api/friends/${user.id}`)
     .then(r => r.json())
     .then(list => {
+      friends = list;
       friendsList.innerHTML = "";
       const current = room.value;
       room.innerHTML = '<option value="global">Global Room</option>';
@@ -351,15 +375,8 @@ function deleteUser(username) {
   });
 }
 
-function showProfile() {
-  updUser.value = user.username;
-  profileModal.style.display = "flex";
-}
-
-function closeProfile() {
-  profileModal.style.display = "none";
-}
-
+function showProfile() { updUser.value = user.username; profileModal.style.display = "flex"; }
+function closeProfile() { profileModal.style.display = "none"; }
 function updateProfile() {
   fetch("/api/user/update", {
     method: "POST",
