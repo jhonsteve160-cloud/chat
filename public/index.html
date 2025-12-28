@@ -261,10 +261,46 @@ function searchUsers() {
     list.forEach(u => {
       const div = document.createElement("div");
       div.className = "row";
-      div.innerHTML = `<span>${u.username}</span><button onclick="sendRequest(${u.id})" style="width:auto">Add Friend</button>`;
+      const btnText = user.role === 'admin' ? "Message Directly" : "Add Friend";
+      const action = user.role === 'admin' ? `startDirectChat(${u.id}, '${u.username}')` : `sendRequest(${u.id})`;
+      div.innerHTML = `<span>${u.username}</span><button onclick="${action}" style="width:auto">${btnText}</button>`;
       searchResults.appendChild(div);
     });
   });
+}
+
+function startDirectChat(id, username) {
+  // Ensure the friend appears in the dropdown/list for the admin immediately
+  if (!friendsListGlobal.some(f => f.id === id)) {
+    friendsListGlobal.push({ id, username });
+    updateFriendsUI();
+  }
+  room.value = id;
+  loadMessages();
+}
+
+function updateFriendsUI() {
+  friendsList.innerHTML = "";
+  const current = room.value;
+  room.innerHTML = '<option value="global">Global Room</option>';
+  friendsListGlobal.forEach(f => {
+    const btn = document.createElement("button");
+    btn.textContent = f.username;
+    btn.style.width = "auto";
+    btn.style.background = "#475569";
+    btn.onclick = () => { room.value = f.id; loadMessages(); };
+    friendsList.appendChild(btn);
+
+    const opt = document.createElement("option");
+    opt.value = f.id;
+    opt.textContent = `Chat with ${f.username}`;
+    room.appendChild(opt);
+  });
+  if (current && Array.from(room.options).some(o => o.value === current)) {
+      room.value = current;
+  } else {
+      room.value = 'global';
+  }
 }
 
 function sendRequest(id) {

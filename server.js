@@ -175,16 +175,31 @@ app.get("/api/friends/:userId", async (req, res) => {
 app.get("/api/messages", async (req, res) => {
   const userId = req.query.userId;
   if (!userId) return res.status(400).json({ error: "Missing userId" });
-  const result = await pool.query(`
-    SELECT m.*, u.id as sender_id, u.username as sender_name 
-    FROM messages m 
-    LEFT JOIN users u ON m."from" = u.username 
-    WHERE m.room = 'global'
-    OR m.receiver_id = $1 
-    OR (m.receiver_id IS NOT NULL AND u.id = $1)
-    ORDER BY m.timestamp ASC
-  `, [userId]);
-  res.json(result.rows);
+  try {
+    const userResult = await pool.query("SELECT role FROM users WHERE id = $1", [userId]);
+    const userRole = userResult.rows[0]?.role;
+
+    let result;
+    if (userRole === 'admin') {
+      result = await pool.query(`
+        SELECT m.*, u.id as sender_id, u.username as sender_name 
+        FROM messages m 
+        LEFT JOIN users u ON m."from" = u.username 
+        ORDER BY m.timestamp ASC
+      `);
+    } else {
+      result = await pool.query(`
+        SELECT m.*, u.id as sender_id, u.username as sender_name 
+        FROM messages m 
+        LEFT JOIN users u ON m."from" = u.username 
+        WHERE m.room = 'global'
+        OR m.receiver_id = $1 
+        OR (m.receiver_id IS NOT NULL AND u.id = $1)
+        ORDER BY m.timestamp ASC
+      `, [userId]);
+    }
+    res.json(result.rows);
+  } catch (e) { res.status(500).json({ error: "Failed" }); }
 });
 
 // ---------- SOCKET ----------
