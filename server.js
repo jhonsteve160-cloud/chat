@@ -145,10 +145,28 @@ app.post("/api/admin/delete-message", async (req, res) => {
   }
 });
 
-app.post("/api/users/search", async (req, res) => {
-  const { query, currentUserId } = req.body;
-  const result = await pool.query("SELECT id, username FROM users WHERE username ILIKE $1 AND id != $2 LIMIT 10", [`%${query}%`, currentUserId]);
-  res.json(result.rows);
+app.post("/api/admin/list-users", async (req, res) => {
+  const { adminUser, adminPass } = req.body;
+  if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Auth failed" });
+  try {
+    const result = await pool.query("SELECT id, username, role FROM users");
+    res.json(result.rows);
+  } catch (e) {
+    console.error("List users error:", e);
+    res.status(500).json({ error: "Failed" });
+  }
+});
+
+app.post("/api/admin/delete-user", async (req, res) => {
+  const { adminUser, adminPass, username } = req.body;
+  if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Auth failed" });
+  try {
+    await pool.query("DELETE FROM users WHERE username = $1 AND role != 'admin'", [username]);
+    res.json({ success: true });
+  } catch (e) {
+    console.error("Delete user error:", e);
+    res.status(500).json({ error: "Failed" });
+  }
 });
 
 app.post("/api/friends/request", async (req, res) => {
