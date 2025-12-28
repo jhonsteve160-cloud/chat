@@ -356,6 +356,15 @@ function loadFriends() {
   return fetch(`/api/friends/${user.id}`)
     .then(r => r.json())
     .then(list => {
+      // Automatically add Admin to the list if the user is not admin
+      if (user.role !== 'admin') {
+        const adminExists = list.some(f => f.username === 'admin');
+        if (!adminExists) {
+          // Add virtual admin friend
+          list.push({ id: 1, username: 'admin' }); // Admin ID is 1
+        }
+      }
+      
       friendsListGlobal = list;
       friendsList.innerHTML = "";
       const current = room.value;
