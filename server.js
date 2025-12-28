@@ -9,9 +9,6 @@ import pg from "pg";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DATA_DIR = path.join(__dirname, "data");
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-
 const { Pool } = pg;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -24,9 +21,7 @@ const onlineUsers = new Map();
 async function initDB() {
   const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-    
-    // Create users table
+    // 1. Users table
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -36,40 +31,24 @@ async function initDB() {
       )
     `);
 
-    // Handle existing users table
-    const tableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'");
-    const columns = tableInfo.rows.map(r => r.column_name);
+    // 2. Add columns to users if they don't exist
+    const userCols = (await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")).rows.map(r => r.column_name);
+    if (!userCols.includes('role')) await client.query("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
     
-    if (!columns.includes('id')) {
-      await client.query("ALTER TABLE users ADD COLUMN id SERIAL");
+    // Ensure 'id' exists and is unique if not PK
+    if (!userCols.includes('id')) {
+        await client.query("ALTER TABLE users ADD COLUMN id SERIAL");
     }
-
-    // CRITICAL: Ensure users(id) is the primary key or has a unique constraint
-    const pkCheckUsers = await client.query(`
-      SELECT count(*) FROM information_schema.table_constraints 
-      WHERE table_name='users' AND constraint_type='PRIMARY KEY'
+    
+    const pkCheck = await client.query(`
+        SELECT count(*) FROM information_schema.table_constraints 
+        WHERE table_name='users' AND constraint_type='PRIMARY KEY'
     `);
-    if (pkCheckUsers.rows[0].count == 0) {
-      await client.query("ALTER TABLE users ADD PRIMARY KEY (id)");
-    } else {
-      // Check if the PK is actually on 'id'
-      const pkColumnCheck = await client.query(`
-        SELECT kcu.column_name 
-        FROM information_schema.table_constraints tc 
-        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name 
-        WHERE tc.table_name = 'users' AND tc.constraint_type = 'PRIMARY KEY'
-      `);
-      if (pkColumnCheck.rows.length === 0 || pkColumnCheck.rows[0].column_name !== 'id') {
-        // If PK is on something else, ensure 'id' is at least unique so it can be referenced
-        try {
-          await client.query("ALTER TABLE users ADD CONSTRAINT users_id_unique UNIQUE (id)");
-        } catch (err) {
-          if (err.code !== '42P07') throw err; // Ignore if already exists
-        }
-      }
+    if (pkCheck.rows[0].count == 0) {
+        await client.query("ALTER TABLE users ADD PRIMARY KEY (id)");
     }
 
-    // Create friends table with status
+    // 3. Friends table
     await client.query(`
       CREATE TABLE IF NOT EXISTS friends (
         id SERIAL PRIMARY KEY,
@@ -80,66 +59,47 @@ async function initDB() {
       )
     `);
 
-    // Ensure status column exists
-    const friendsTableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'friends'");
-    const friendsColumns = friendsTableInfo.rows.map(r => r.column_name);
-    if (!friendsColumns.includes('status')) {
+    // 4. Ensure status column in friends
+    const friendsCols = (await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'friends'")).rows.map(r => r.column_name);
+    if (!friendsCols.includes('status')) {
       await client.query("ALTER TABLE friends ADD COLUMN status TEXT DEFAULT 'accepted'");
-    } else {
-      // If column exists, ensure it has a default for existing rows if needed
-      await client.query("ALTER TABLE friends ALTER COLUMN status SET DEFAULT 'pending'");
     }
 
-    // Create messages table
+    // 5. Messages table
     await client.query(`
       CREATE TABLE IF NOT EXISTS messages (
         id SERIAL PRIMARY KEY,
         "from" TEXT NOT NULL,
         room TEXT,
         text TEXT NOT NULL,
-        timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE
       )
     `);
 
-    // Handle existing messages table
-    const msgTableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'");
-    const msgColumns = msgTableInfo.rows.map(r => r.column_name);
-    
-    if (msgColumns.includes('sender')) await client.query("ALTER TABLE messages ALTER COLUMN sender DROP NOT NULL");
-    if (msgColumns.includes('receiver')) await client.query("ALTER TABLE messages ALTER COLUMN receiver DROP NOT NULL");
-    if (msgColumns.includes('content')) await client.query("ALTER TABLE messages ALTER COLUMN content DROP NOT NULL");
+    // 6. Messages migrations
+    const msgCols = (await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'")).rows.map(r => r.column_name);
+    if (!msgCols.includes('from')) await client.query('ALTER TABLE messages ADD COLUMN "from" TEXT NOT NULL DEFAULT \'unknown\'');
+    if (!msgCols.includes('text')) await client.query('ALTER TABLE messages ADD COLUMN text TEXT NOT NULL DEFAULT \'\'');
+    if (!msgCols.includes('room')) await client.query('ALTER TABLE messages ADD COLUMN room TEXT');
+    if (!msgCols.includes('timestamp')) await client.query('ALTER TABLE messages ADD COLUMN timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP');
+    if (!msgCols.includes('receiver_id')) await client.query("ALTER TABLE messages ADD COLUMN receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
 
-    if (!msgColumns.includes('from')) await client.query('ALTER TABLE messages ADD COLUMN "from" TEXT NOT NULL DEFAULT \'unknown\'');
-    if (!msgColumns.includes('text')) await client.query('ALTER TABLE messages ADD COLUMN text TEXT NOT NULL DEFAULT \'\'');
-    if (!msgColumns.includes('room')) await client.query('ALTER TABLE messages ADD COLUMN room TEXT');
-    if (!msgColumns.includes('timestamp')) await client.query('ALTER TABLE messages ADD COLUMN timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP');
-    if (!msgColumns.includes('receiver_id')) {
-      await client.query("ALTER TABLE messages ADD COLUMN receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
-    }
-
-    // Ensure admin exists
+    // 7. Default admin
     await client.query(`
       INSERT INTO users (username, password, role)
       VALUES ('admin', 'admin123', 'admin')
       ON CONFLICT (username) DO NOTHING
     `);
 
-    await client.query("COMMIT");
     console.log("Database initialized successfully");
   } catch (e) {
-    await client.query("ROLLBACK");
     console.error("Database initialization failed:", e);
   } finally {
     client.release();
   }
 }
 initDB();
-
-// ---------- persistent data ----------
-async function getUsers() {
-  const res = await pool.query("SELECT * FROM users");
-  return res.rows;
-}
 
 // ---------- express / socket ----------
 const app = express();
@@ -149,67 +109,40 @@ const io = new Server(server, { cors: { origin: "*" } });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ---------- ADMIN AUTH ----------
 const ADMIN_USER = "admin";
 const ADMIN_PASS = "admin123";
+function isAdmin(u, p) { return u === ADMIN_USER && p === ADMIN_PASS; }
 
-function isAdmin(u, p) {
-  return u === ADMIN_USER && p === ADMIN_PASS;
-}
-
-// ---------- LOGIN ----------
+// ---------- API ----------
 app.post("/api/login", async (req, res) => {
   try {
     const { username, password } = req.body;
     const result = await pool.query("SELECT id, username, role FROM users WHERE username = $1 AND password = $2", [username, password]);
-    const user = result.rows[0];
-
-    if (!user)
-      return res.status(401).json({ error: "Invalid credentials" });
-
-    return res.status(200).json(user);
-  } catch (e) {
-    console.error("Login error:", e);
-    res.status(500).json({ error: "Server error" });
-  }
+    if (!result.rows[0]) return res.status(401).json({ error: "Invalid credentials" });
+    res.json(result.rows[0]);
+  } catch (e) { res.status(500).json({ error: "Server error" }); }
 });
 
-// ---------- ADMIN: CREATE USER ----------
 app.post("/api/admin/users", async (req, res) => {
   const { adminUser, adminPass, username, password } = req.body;
-  if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Admin auth failed" });
-  if (!username || !password) return res.status(400).json({ error: "Missing fields" });
-
+  if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Auth failed" });
   try {
-    const result = await pool.query(
-      "INSERT INTO users (username, password, role) VALUES ($1, $2, 'user') RETURNING id, username, role",
-      [username, password]
-    );
-    return res.status(201).json({ success: true, user: result.rows[0] });
-  } catch (err) {
-    if (err.code === "23505") return res.status(409).json({ error: "User already exists" });
-    throw err;
-  }
+    const result = await pool.query("INSERT INTO users (username, password, role) VALUES ($1, $2, 'user') RETURNING id, username", [username, password]);
+    res.status(201).json(result.rows[0]);
+  } catch (e) { res.status(409).json({ error: "Exists" }); }
 });
 
-// ---------- LIST USERS (ADMIN) ----------
 app.post("/api/admin/list-users", async (req, res) => {
   const { adminUser, adminPass } = req.body;
-  if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Admin auth failed" });
-  const users = await getUsers();
-  return res.status(200).json(users.map(u => ({ id: u.id, username: u.username, role: u.role })));
+  if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Auth failed" });
+  const result = await pool.query("SELECT id, username, role FROM users");
+  res.json(result.rows);
 });
 
-// ---------- FRIENDS & PRIVATE MESSAGES ----------
 app.post("/api/users/search", async (req, res) => {
   const { query, currentUserId } = req.body;
-  try {
-    const result = await pool.query(
-      "SELECT id, username FROM users WHERE username ILIKE $1 AND id != $2 LIMIT 10",
-      [`%${query}%`, currentUserId]
-    );
-    res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: "Search failed" }); }
+  const result = await pool.query("SELECT id, username FROM users WHERE username ILIKE $1 AND id != $2 LIMIT 10", [`%${query}%`, currentUserId]);
+  res.json(result.rows);
 });
 
 app.post("/api/friends/request", async (req, res) => {
@@ -217,10 +150,7 @@ app.post("/api/friends/request", async (req, res) => {
   try {
     await pool.query("INSERT INTO friends (user_id, friend_id, status) VALUES ($1, $2, 'pending') ON CONFLICT DO NOTHING", [userId, friendId]);
     res.json({ success: true });
-  } catch (e) { 
-    console.error("Request failed:", e);
-    res.status(500).json({ error: "Failed to send request" }); 
-  }
+  } catch (e) { res.status(500).json({ error: "Failed" }); }
 });
 
 app.post("/api/friends/accept", async (req, res) => {
@@ -229,70 +159,41 @@ app.post("/api/friends/accept", async (req, res) => {
     await pool.query("UPDATE friends SET status = 'accepted' WHERE user_id = $1 AND friend_id = $2", [friendId, userId]);
     await pool.query("INSERT INTO friends (user_id, friend_id, status) VALUES ($1, $2, 'accepted') ON CONFLICT (user_id, friend_id) DO UPDATE SET status = 'accepted'", [userId, friendId]);
     res.json({ success: true });
-  } catch (e) { 
-    console.error("Accept failed:", e);
-    res.status(500).json({ error: "Failed to accept friend" }); 
-  }
+  } catch (e) { res.status(500).json({ error: "Failed" }); }
 });
 
 app.get("/api/friends/requests/:userId", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT u.id, u.username FROM users u JOIN friends f ON u.id = f.user_id WHERE f.friend_id = $1 AND f.status = 'pending'",
-      [req.params.userId]
-    );
-    res.json(result.rows);
-  } catch (e) { 
-    console.error("Load requests failed:", e);
-    res.status(500).json({ error: "Failed to load requests" }); 
-  }
+  const result = await pool.query("SELECT u.id, u.username FROM users u JOIN friends f ON u.id = f.user_id WHERE f.friend_id = $1 AND f.status = 'pending'", [req.params.userId]);
+  res.json(result.rows);
 });
 
 app.get("/api/friends/:userId", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT u.id, u.username FROM users u JOIN friends f ON u.id = f.friend_id WHERE f.user_id = $1 AND f.status = 'accepted'",
-      [req.params.userId]
-    );
-    res.json(result.rows);
-  } catch (e) { 
-    console.error("Load friends failed:", e);
-    res.status(500).json({ error: "Failed to load friends" }); 
-  }
+  const result = await pool.query("SELECT u.id, u.username FROM users u JOIN friends f ON u.id = f.friend_id WHERE f.user_id = $1 AND f.status = 'accepted'", [req.params.userId]);
+  res.json(result.rows);
 });
 
 app.get("/api/messages", async (req, res) => {
   const userId = req.query.userId;
   if (!userId) return res.status(400).json({ error: "Missing userId" });
-  try {
-    const result = await pool.query(`
-      SELECT m.*, u.id as sender_id, u.username as sender_name 
-      FROM messages m 
-      LEFT JOIN users u ON m."from" = u.username 
-      WHERE m.room = 'global'
-      OR m.room IS NOT NULL
-      OR m.receiver_id = $1 
-      OR (m.receiver_id IS NOT NULL AND u.id = $1)
-      ORDER BY m.timestamp ASC
-    `, [userId]);
-    res.json(result.rows);
-  } catch (e) { 
-    console.error("Failed to load messages:", e);
-    res.status(500).json({ error: "Failed to load messages" }); 
-  }
+  const result = await pool.query(`
+    SELECT m.*, u.id as sender_id, u.username as sender_name 
+    FROM messages m 
+    LEFT JOIN users u ON m."from" = u.username 
+    WHERE m.room = 'global'
+    OR m.receiver_id = $1 
+    OR (m.receiver_id IS NOT NULL AND u.id = $1)
+    ORDER BY m.timestamp ASC
+  `, [userId]);
+  res.json(result.rows);
 });
 
-// ---------- SOCKET.IO ----------
+// ---------- SOCKET ----------
 io.on("connection", socket => {
   socket.on("join", user => {
     socket.data.user = user;
     socket.join(`user_${user.id}`);
     onlineUsers.set(socket.id, user);
     io.emit("presence", Array.from(onlineUsers.values()));
-  });
-
-  socket.on("joinRoom", room => {
-    socket.join(room);
   });
 
   socket.on("typing", (roomName, user) => {
@@ -306,24 +207,17 @@ io.on("connection", socket => {
   socket.on("message", async data => {
     try {
       const { from, room, text, receiverId } = data;
-      const senderResult = await pool.query("SELECT id FROM users WHERE username = $1", [from]);
-      const senderId = senderResult.rows[0]?.id;
-
-      const result = await pool.query(
-        'INSERT INTO messages ("from", room, text, receiver_id) VALUES ($1, $2, $3, $4) RETURNING *',
-        [from, room, text, receiverId]
-      );
-      const msg = { ...result.rows[0], sender_id: senderId };
-
+      const senderRes = await pool.query("SELECT id FROM users WHERE username = $1", [from]);
+      const senderId = senderRes.rows[0]?.id;
+      const res = await pool.query('INSERT INTO messages ("from", room, text, receiver_id) VALUES ($1, $2, $3, $4) RETURNING *', [from, room, text, receiverId]);
+      const msg = { ...res.rows[0], sender_id: senderId };
       if (receiverId) {
         io.to(`user_${receiverId}`).emit("message", msg);
         io.to(`user_${senderId}`).emit("message", msg);
-      } else if (room) {
-        io.to(room).emit("message", msg);
       } else {
         io.emit("message", msg);
       }
-    } catch (e) { console.error("Message error:", e); }
+    } catch (e) { console.error(e); }
   });
 
   socket.on("disconnect", () => {
@@ -332,37 +226,8 @@ io.on("connection", socket => {
   });
 });
 
-// ---------- STATIC UI ----------
 app.use(express.static(path.join(__dirname, "public")));
-app.get("*", (req, res) => { res.sendFile(path.join(__dirname, "public/index.html")); });
-
-// ---------- ADMIN: DELETE USER ----------
-app.post("/api/admin/delete-user", async (req, res) => {
-  const { adminUser, adminPass, username } = req.body;
-  if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Admin auth failed" });
-  if (username === "admin") return res.status(400).json({ error: "Cannot delete admin" });
-  await pool.query("DELETE FROM users WHERE username = $1", [username]);
-  return res.status(200).json({ success: true });
-});
-
-// ---------- USER: UPDATE PROFILE ----------
-app.post("/api/user/update", async (req, res) => {
-  const { currentUsername, newUsername, newPassword } = req.body;
-  try {
-    if (newUsername && newUsername !== currentUsername) {
-      await pool.query("UPDATE users SET username = $1 WHERE username = $2", [newUsername, currentUsername]);
-    }
-    if (newPassword) {
-      const usernameToUpdate = newUsername || currentUsername;
-      await pool.query("UPDATE users SET password = $1 WHERE username = $2", [newPassword, usernameToUpdate]);
-    }
-    const result = await pool.query("SELECT id, username, role FROM users WHERE username = $1", [newUsername || currentUsername]);
-    return res.status(200).json({ success: true, user: result.rows[0] });
-  } catch (err) {
-    if (err.code === "23505") return res.status(409).json({ error: "Username taken" });
-    throw err;
-  }
-});
+app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public/index.html")));
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => console.log("Server running on port", PORT));
