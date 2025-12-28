@@ -190,9 +190,17 @@ function loadMessages(){
 function renderMessage(m){
   const d = document.createElement("div");
   d.className="msg";
+  d.id = `msg-${m.id}`;
+  const deleteBtn = (user && user.role === 'admin' && room.value === 'global') 
+    ? `<button onclick="deleteMsg(${m.id})" style="width: auto; background: #ef4444; padding: 2px 6px; font-size: 10px; margin-left: 10px;">Delete</button>` 
+    : "";
+    
   d.innerHTML = `
     <div style="display:flex; justify-content: space-between;">
-      <b style="color: var(--primary)">${m.from}</b>
+      <div>
+        <b style="color: var(--primary)">${m.from}</b>
+        ${deleteBtn}
+      </div>
       <span class="small">${new Date(m.timestamp).toLocaleTimeString()}</span>
     </div>
     <div style="margin-top: 4px; white-space: pre-wrap;">${m.text}</div>
@@ -200,6 +208,22 @@ function renderMessage(m){
   chat.appendChild(d);
   chat.scrollTop = chat.scrollHeight;
 }
+
+function deleteMsg(id) {
+  if (!confirm("Delete this message?")) return;
+  fetch("/api/admin/delete-message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adminUser: "admin", adminPass: "admin123", messageId: id })
+  }).then(r => r.json()).then(d => {
+    if (d.error) alert(d.error);
+  });
+}
+
+socket.on("messageDeleted", (id) => {
+  const el = document.getElementById(`msg-${id}`);
+  if (el) el.remove();
+});
 
 socket.on("presence", list=>{
   if (!user) return;

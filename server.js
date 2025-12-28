@@ -132,11 +132,17 @@ app.post("/api/admin/users", async (req, res) => {
   } catch (e) { res.status(409).json({ error: "Exists" }); }
 });
 
-app.post("/api/admin/list-users", async (req, res) => {
-  const { adminUser, adminPass } = req.body;
+app.post("/api/admin/delete-message", async (req, res) => {
+  const { adminUser, adminPass, messageId } = req.body;
   if (!isAdmin(adminUser, adminPass)) return res.status(403).json({ error: "Auth failed" });
-  const result = await pool.query("SELECT id, username, role FROM users");
-  res.json(result.rows);
+  try {
+    await pool.query("DELETE FROM messages WHERE id = $1", [messageId]);
+    io.emit("messageDeleted", messageId);
+    res.json({ success: true });
+  } catch (e) { 
+    console.error("Delete message error:", e);
+    res.status(500).json({ error: "Failed" }); 
+  }
 });
 
 app.post("/api/users/search", async (req, res) => {
