@@ -90,7 +90,17 @@ async function initDB() {
     const msgTableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'");
     const msgColumns = msgTableInfo.rows.map(r => r.column_name);
     if (!msgColumns.includes('from')) {
-      await client.query('ALTER TABLE messages ADD COLUMN "from" TEXT');
+      await client.query('ALTER TABLE messages ADD COLUMN "from" TEXT NOT NULL DEFAULT \'unknown\'');
+    }
+    // Also ensure other columns exist for messages
+    if (!msgColumns.includes('text')) {
+      await client.query('ALTER TABLE messages ADD COLUMN text TEXT NOT NULL DEFAULT \'\'');
+    }
+    if (!msgColumns.includes('room')) {
+      await client.query('ALTER TABLE messages ADD COLUMN room TEXT');
+    }
+    if (!msgColumns.includes('timestamp')) {
+      await client.query('ALTER TABLE messages ADD COLUMN timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP');
     }
 
     // Ensure admin exists
@@ -140,15 +150,19 @@ function isAdmin(u, p) {
 
 // ---------- LOGIN ----------
 app.post("/api/login", async (req, res) => {
-  const { username, password } = req.body;
+  try {
+    const { username, password } = req.body;
+    const result = await pool.query("SELECT id, username, role FROM users WHERE username = $1 AND password = $2", [username, password]);
+    const user = result.rows[0];
 
-  const result = await pool.query("SELECT id, username, role FROM users WHERE username = $1 AND password = $2", [username, password]);
-  const user = result.rows[0];
+    if (!user)
+      return res.status(401).json({ error: "Invalid credentials" });
 
-  if (!user)
-    return res.status(401).json({ error: "Invalid credentials" });
-
-  return res.status(200).json(user);
+    return res.status(200).json(user);
+  } catch (e) {
+    console.error("Login error:", e);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // ---------- ADMIN: CREATE USER ----------
