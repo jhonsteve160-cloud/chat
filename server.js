@@ -90,11 +90,15 @@ async function initDB() {
     const msgTableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'");
     const msgColumns = msgTableInfo.rows.map(r => r.column_name);
     
-    // Fix: Remove problematic 'sender' column if it exists and causes constraint issues, 
-    // or just ensure our code matches the schema.
-    // The logs show a 'sender' column with a NOT NULL constraint is failing.
+    // Fix: Remove problematic NOT NULL constraints on older columns from previous versions
     if (msgColumns.includes('sender')) {
       await client.query("ALTER TABLE messages ALTER COLUMN sender DROP NOT NULL");
+    }
+    if (msgColumns.includes('receiver')) {
+      await client.query("ALTER TABLE messages ALTER COLUMN receiver DROP NOT NULL");
+    }
+    if (msgColumns.includes('content')) {
+      await client.query("ALTER TABLE messages ALTER COLUMN content DROP NOT NULL");
     }
 
     if (!msgColumns.includes('from')) {
