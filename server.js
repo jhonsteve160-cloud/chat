@@ -61,7 +61,7 @@ async function initDB() {
       `);
       if (pkColumnCheck.rows.length === 0 || pkColumnCheck.rows[0].column_name !== 'id') {
         // If PK is on something else, ensure 'id' is at least unique so it can be referenced
-        await client.query("ALTER TABLE users ADD CONSTRAINT users_id_unique UNIQUE (id)");
+        await client.query("ALTER TABLE users ADD CONSTRAINT IF NOT EXISTS users_id_unique UNIQUE (id)");
       }
     }
 
@@ -81,6 +81,9 @@ async function initDB() {
     const friendsColumns = friendsTableInfo.rows.map(r => r.column_name);
     if (!friendsColumns.includes('status')) {
       await client.query("ALTER TABLE friends ADD COLUMN status TEXT DEFAULT 'accepted'");
+    } else {
+      // If column exists, ensure it has a default for existing rows if needed
+      await client.query("ALTER TABLE friends ALTER COLUMN status SET DEFAULT 'pending'");
     }
 
     // Create messages table
@@ -263,6 +266,7 @@ app.get("/api/messages", async (req, res) => {
       FROM messages m 
       LEFT JOIN users u ON m."from" = u.username 
       WHERE m.room = 'global'
+      OR m.room IS NOT NULL
       OR m.receiver_id = $1 
       OR (m.receiver_id IS NOT NULL AND u.id = $1)
       ORDER BY m.timestamp ASC
