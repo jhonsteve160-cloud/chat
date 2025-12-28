@@ -216,17 +216,22 @@ io.on("connection", socket => {
   });
 
   socket.on("message", async data => {
-    const { from, room, text } = data;
-    const result = await pool.query(
-      'INSERT INTO messages ("from", room, text) VALUES ($1, $2, $3) RETURNING "from", room, text, timestamp',
-      [from, room, text]
-    );
-    const msg = result.rows[0];
+    try {
+      const { from, room, text } = data;
+      const result = await pool.query(
+        'INSERT INTO messages ("from", room, text) VALUES ($1, $2, $3) RETURNING "from", room, text, timestamp',
+        [from, room, text]
+      );
+      const msg = result.rows[0];
 
-    if (data.room)
-      io.to(data.room).emit("message", msg);
-    else
-      io.emit("message", msg);
+      // Broadcast to everyone including the sender
+      if (data.room)
+        io.to(data.room).emit("message", msg);
+      else
+        io.emit("message", msg);
+    } catch (e) {
+      console.error("Message error:", e);
+    }
   });
 
   socket.on("disconnect", () => {
