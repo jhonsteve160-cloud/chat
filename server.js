@@ -89,6 +89,14 @@ async function initDB() {
     // Handle existing messages table
     const msgTableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'");
     const msgColumns = msgTableInfo.rows.map(r => r.column_name);
+    
+    // Fix: Remove problematic 'sender' column if it exists and causes constraint issues, 
+    // or just ensure our code matches the schema.
+    // The logs show a 'sender' column with a NOT NULL constraint is failing.
+    if (msgColumns.includes('sender')) {
+      await client.query("ALTER TABLE messages ALTER COLUMN sender DROP NOT NULL");
+    }
+
     if (!msgColumns.includes('from')) {
       await client.query('ALTER TABLE messages ADD COLUMN "from" TEXT NOT NULL DEFAULT \'unknown\'');
     }
@@ -239,10 +247,24 @@ io.on("connection", socket => {
         return;
       }
 
-      const result = await pool.query(
-        'INSERT INTO messages ("from", room, text) VALUES ($1, $2, $3) RETURNING "from", room, text, timestamp',
-        [from, room, text]
-      );
+      // Check if 'sender' column exists and use it if necessary, 
+      // but primarily we use 'from'. The logs showed 'sender' was required.
+      const tableInfo = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'");
+      const columns = tableInfo.rows.map(r => r.column_name);
+      
+      let query = 'INSERT INTO messages ("from", room, text';
+      let values = [from, room, text];
+      let placeholders = '$1, $2, $3';
+      
+      if (columns.includes('sender')) {
+        query += ', sender';
+        values.push(from);
+        placeholders += ', $' + values.length;
+      }
+      
+      query += ') VALUES (' + placeholders + ') RETURNING "from", room, text, timestamp';
+      
+      const result = await pool.query(query, values);
       const msg = result.rows[0];
       console.log("Message saved and broadcasting:", msg);
 
