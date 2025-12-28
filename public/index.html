@@ -121,12 +121,13 @@ textarea#msg { height: 60px; resize: none; }
 const socket = io();
 let user = null;
 let currentTab = 'global';
-let friends = [];
+let friendsListGlobal = [];
 
 function switchTab(t) {
   currentTab = t;
   document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-  document.querySelector(`.tab[onclick="switchTab('${t}')"]`).classList.add('active');
+  const tabEl = document.querySelector(`.tab[onclick="switchTab('${t}')"]`);
+  if (tabEl) tabEl.classList.add('active');
   
   if (t === 'friends') {
     friendsView.style.display = 'block';
@@ -157,14 +158,17 @@ function login() {
     }
     socket.emit("join", user);
     socket.emit("joinRoom","global");
-    loadMessages();
-    loadFriends();
+    loadFriends().then(() => {
+        loadMessages();
+        loadRequests();
+    });
   });
 }
 
 function loadMessages(){
   chat.innerHTML = "";
   const selected = room.value;
+  if (!user) return;
   fetch(`/api/messages?userId=${user.id}`)
     .then(r => r.json())
     .then(msgs => {
@@ -196,7 +200,8 @@ function renderMessage(m){
 }
 
 socket.on("presence", list=>{
-  const activeFriends = list.filter(u => friends.some(f => f.id === u.id));
+  if (!user) return;
+  const activeFriends = list.filter(u => friendsListGlobal.some(f => f.id === u.id));
   
   if (user.role === 'admin') {
     online.innerHTML = "<b>All Active Users:</b> " + list.map(u => u.username).join(", ");
@@ -275,6 +280,7 @@ function sendRequest(id) {
 }
 
 function loadRequests() {
+  if (!user) return;
   fetch(`/api/friends/requests/${user.id}`)
     .then(r => r.json())
     .then(list => {
@@ -304,10 +310,11 @@ function acceptRequest(id) {
 }
 
 function loadFriends() {
-  fetch(`/api/friends/${user.id}`)
+  if (!user) return Promise.resolve();
+  return fetch(`/api/friends/${user.id}`)
     .then(r => r.json())
     .then(list => {
-      friends = list;
+      friendsListGlobal = list;
       friendsList.innerHTML = "";
       const current = room.value;
       room.innerHTML = '<option value="global">Global Room</option>';
@@ -324,7 +331,11 @@ function loadFriends() {
         opt.textContent = `Chat with ${f.username}`;
         room.appendChild(opt);
       });
-      room.value = current;
+      if (current && Array.from(room.options).some(o => o.value === current)) {
+          room.value = current;
+      } else {
+          room.value = 'global';
+      }
     });
 }
 
@@ -375,7 +386,7 @@ function deleteUser(username) {
   });
 }
 
-function showProfile() { updUser.value = user.username; profileModal.style.display = "flex"; }
+function showProfile() { if (user) { updUser.value = user.username; profileModal.style.display = "flex"; } }
 function closeProfile() { profileModal.style.display = "none"; }
 function updateProfile() {
   fetch("/api/user/update", {

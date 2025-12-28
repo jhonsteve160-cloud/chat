@@ -59,7 +59,7 @@ async function initDB() {
         JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name 
         WHERE tc.table_name = 'users' AND tc.constraint_type = 'PRIMARY KEY'
       `);
-      if (pkColumnCheck.rows[0].column_name !== 'id') {
+      if (pkColumnCheck.rows.length === 0 || pkColumnCheck.rows[0].column_name !== 'id') {
         // If PK is on something else, ensure 'id' is at least unique so it can be referenced
         await client.query("ALTER TABLE users ADD CONSTRAINT users_id_unique UNIQUE (id)");
       }
@@ -210,7 +210,10 @@ app.post("/api/friends/request", async (req, res) => {
   try {
     await pool.query("INSERT INTO friends (user_id, friend_id, status) VALUES ($1, $2, 'pending') ON CONFLICT DO NOTHING", [userId, friendId]);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: "Failed to send request" }); }
+  } catch (e) { 
+    console.error("Request failed:", e);
+    res.status(500).json({ error: "Failed to send request" }); 
+  }
 });
 
 app.post("/api/friends/accept", async (req, res) => {
@@ -219,7 +222,10 @@ app.post("/api/friends/accept", async (req, res) => {
     await pool.query("UPDATE friends SET status = 'accepted' WHERE user_id = $1 AND friend_id = $2", [friendId, userId]);
     await pool.query("INSERT INTO friends (user_id, friend_id, status) VALUES ($1, $2, 'accepted') ON CONFLICT (user_id, friend_id) DO UPDATE SET status = 'accepted'", [userId, friendId]);
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: "Failed to accept friend" }); }
+  } catch (e) { 
+    console.error("Accept failed:", e);
+    res.status(500).json({ error: "Failed to accept friend" }); 
+  }
 });
 
 app.get("/api/friends/requests/:userId", async (req, res) => {
@@ -229,7 +235,10 @@ app.get("/api/friends/requests/:userId", async (req, res) => {
       [req.params.userId]
     );
     res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: "Failed to load requests" }); }
+  } catch (e) { 
+    console.error("Load requests failed:", e);
+    res.status(500).json({ error: "Failed to load requests" }); 
+  }
 });
 
 app.get("/api/friends/:userId", async (req, res) => {
@@ -239,27 +248,38 @@ app.get("/api/friends/:userId", async (req, res) => {
       [req.params.userId]
     );
     res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: "Failed to load friends" }); }
+  } catch (e) { 
+    console.error("Load friends failed:", e);
+    res.status(500).json({ error: "Failed to load friends" }); 
+  }
 });
 
-// Presence logic update
-function getRestrictedPresence(currentUser) {
-  const allOnline = Array.from(onlineUsers.values());
-  if (currentUser.role === 'admin') return allOnline;
-  
-  // Logic handled on client side for now to minimize server complexity, 
-  // but server will emit the filtered list in a real production app.
-  return allOnline;
-}
+app.get("/api/messages", async (req, res) => {
+  const userId = req.query.userId;
+  if (!userId) return res.status(400).json({ error: "Missing userId" });
+  try {
+    const result = await pool.query(`
+      SELECT m.*, u.id as sender_id, u.username as sender_name 
+      FROM messages m 
+      LEFT JOIN users u ON m."from" = u.username 
+      WHERE m.room = 'global'
+      OR m.receiver_id = $1 
+      OR (m.receiver_id IS NOT NULL AND u.id = $1)
+      ORDER BY m.timestamp ASC
+    `, [userId]);
+    res.json(result.rows);
+  } catch (e) { 
+    console.error("Failed to load messages:", e);
+    res.status(500).json({ error: "Failed to load messages" }); 
+  }
+});
 
-// Update socket handler for presence
+// ---------- SOCKET.IO ----------
 io.on("connection", socket => {
   socket.on("join", user => {
     socket.data.user = user;
     socket.join(`user_${user.id}`);
     onlineUsers.set(socket.id, user);
-    
-    // Broadcast all to everyone, but client UI will filter based on role/friendship
     io.emit("presence", Array.from(onlineUsers.values()));
   });
 
