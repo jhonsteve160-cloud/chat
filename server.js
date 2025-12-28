@@ -122,6 +122,22 @@ async function initDB() {
       ON CONFLICT (username) DO NOTHING
     `);
 
+    // Create friends table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS friends (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        friend_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(user_id, friend_id)
+      )
+    `);
+
+    // Ensure messages table has receiver_id for private messages
+    const msgCols = (await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'")).rows.map(r => r.column_name);
+    if (!msgCols.includes('receiver_id')) {
+      await client.query("ALTER TABLE messages ADD COLUMN receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
+    }
+
     await client.query("COMMIT");
     console.log("Database initialized successfully");
   } catch (e) {
@@ -214,73 +230,85 @@ app.post("/api/admin/list-users", async (req, res) => {
   })));
 });
 
-// ---------- MESSAGES API ----------
-app.get("/api/messages", async (req, res) => {
-  const messages = await getMessages();
-  res.status(200).json(messages);
+// ---------- FRIENDS & PRIVATE MESSAGES ----------
+app.post("/api/users/search", async (req, res) => {
+  const { query, currentUserId } = req.body;
+  try {
+    const result = await pool.query(
+      "SELECT id, username FROM users WHERE username ILIKE $1 AND id != $2 LIMIT 10",
+      [`%${query}%`, currentUserId]
+    );
+    res.json(result.rows);
+  } catch (e) { res.status(500).json({ error: "Search failed" }); }
 });
 
-// ---------- presence ----------
-const onlineUsers = new Map();
+app.post("/api/friends/add", async (req, res) => {
+  const { userId, friendId } = req.body;
+  try {
+    await pool.query("INSERT INTO friends (user_id, friend_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [userId, friendId]);
+    await pool.query("INSERT INTO friends (user_id, friend_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", [friendId, userId]);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: "Failed to add friend" }); }
+});
 
-// ---------- SOCKET.IO ----------
+app.get("/api/friends/:userId", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT u.id, u.username FROM users u JOIN friends f ON u.id = f.friend_id WHERE f.user_id = $1",
+      [req.params.userId]
+    );
+    res.json(result.rows);
+  } catch (e) { res.status(500).json({ error: "Failed to load friends" }); }
+});
+
+// Update messages API to include private messages
+app.get("/api/messages", async (req, res) => {
+  const userId = req.query.userId;
+  try {
+    const result = await pool.query(`
+      SELECT m.*, u.id as sender_id, u.username as sender_name 
+      FROM messages m 
+      LEFT JOIN users u ON m."from" = u.username 
+      WHERE m.room IS NOT NULL 
+      OR m.receiver_id = $1 
+      OR (m.receiver_id IS NOT NULL AND u.id = $1)
+      ORDER BY m.timestamp ASC
+    `, [userId]);
+    res.json(result.rows);
+  } catch (e) { res.status(500).json({ error: "Failed to load messages" }); }
+});
+
+// Update socket handler for private messages
 io.on("connection", socket => {
-
   socket.on("join", user => {
     socket.data.user = user;
+    socket.join(`user_${user.id}`); // Join personal room for private messages
     onlineUsers.set(socket.id, user);
-
     io.emit("presence", Array.from(onlineUsers.values()));
-  });
-
-  socket.on("joinRoom", room => {
-    socket.join(room);
-  });
-
-  socket.on("typing", (room, user) => {
-    socket.to(room).emit("typing", user);
   });
 
   socket.on("message", async data => {
     try {
-      console.log("Server received message data:", data);
-      const { from, room, text } = data;
-      
-      if (!from || !text) {
-        console.error("Missing from or text in message data");
-        return;
-      }
+      const { from, room, text, receiverId } = data;
+      const senderResult = await pool.query("SELECT id FROM users WHERE username = $1", [from]);
+      const senderId = senderResult.rows[0]?.id;
 
-      // Check if 'sender' column exists and use it if necessary, 
-      // but primarily we use 'from'. The logs showed 'sender' was required.
-      const tableInfo = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'");
-      const columns = tableInfo.rows.map(r => r.column_name);
-      
-      let query = 'INSERT INTO messages ("from", room, text';
-      let values = [from, room, text];
-      let placeholders = '$1, $2, $3';
-      
-      if (columns.includes('sender')) {
-        query += ', sender';
-        values.push(from);
-        placeholders += ', $' + values.length;
-      }
-      
-      query += ') VALUES (' + placeholders + ') RETURNING "from", room, text, timestamp';
-      
-      const result = await pool.query(query, values);
-      const msg = result.rows[0];
-      console.log("Message saved and broadcasting:", msg);
+      const result = await pool.query(
+        'INSERT INTO messages ("from", room, text, receiver_id) VALUES ($1, $2, $3, $4) RETURNING *',
+        [from, room, text, receiverId]
+      );
+      const msg = { ...result.rows[0], sender_id: senderId };
 
-      // Broadcast to everyone including the sender
-      if (room) {
+      if (receiverId) {
+        // Private message: emit to sender and receiver only
+        io.to(`user_${receiverId}`).emit("message", msg);
+        io.to(`user_${senderId}`).emit("message", msg);
+      } else if (room) {
         io.to(room).emit("message", msg);
       } else {
         io.emit("message", msg);
       }
-    } catch (e) {
-      console.error("Message error:", e);
-    }
+    } catch (e) { console.error("Message error:", e); }
   });
 
   socket.on("disconnect", () => {

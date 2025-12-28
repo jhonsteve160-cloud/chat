@@ -68,9 +68,21 @@ textarea#msg { height: 60px; resize: none; }
     <span id="presenceCount" class="badge"></span>
   </div>
   <div id="online" style="margin-bottom: 15px; padding: 10px; background: #0f172a; border-radius: 8px;"></div>
-  <select id="room">
+  <select id="room" onchange="loadMessages()">
     <option value="global">Global Room</option>
   </select>
+
+  <div id="friendSection" style="margin: 15px 0;">
+    <div class="row">
+      <input id="userSearch" placeholder="Search users by name...">
+      <button onclick="searchUsers()" style="width: auto;">Search</button>
+    </div>
+    <div id="searchResults" style="margin-top: 5px;"></div>
+    
+    <p><b>Friends</b></p>
+    <div id="friendsList" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+  </div>
+
   <div id="chat"></div>
   <div id="typing" class="small" style="height: 20px; color: var(--primary);"></div>
   <div class="row">
@@ -115,76 +127,151 @@ function login() {
       adminPanel.style.display="block";
       loadUsers();
     }
-    socket.emit("join", { username:d.username });
+    socket.emit("join", user);
     socket.emit("joinRoom","global");
     loadMessages();
+    loadFriends();
   });
 }
 
 function loadMessages(){
   chat.innerHTML = "";
-  fetch("/api/messages")
+  const target = room.value;
+  let url = `/api/messages?userId=${user.id}`;
+  
+  fetch(url)
   .then(r=>r.json())
-  .then(msgs=>msgs.forEach(renderMessage));
-}
-
-function renderMessage(m){
-  const d = document.createElement("div");
-  d.className="msg";
-  d.innerHTML = `
-    <div style="display:flex; justify-content: space-between;">
-      <b style="color: var(--primary)">${m.from}</b>
-      <span class="small">${new Date(m.timestamp).toLocaleTimeString()}</span>
-    </div>
-    <div style="margin-top: 4px; white-space: pre-wrap;">${m.text}</div>
-  `;
-  chat.appendChild(d);
-  chat.scrollTop = chat.scrollHeight;
-}
-
-socket.on("presence", list=>{
-  online.innerHTML = "<b>Online:</b> ";
-  presenceCount.textContent = list.length + " online";
-  list.forEach(u=>{
-    const s = document.createElement("span");
-    s.textContent = "• " + u.username;
-    online.appendChild(s);
+  .then(msgs => {
+    msgs.forEach(m => {
+      // Filter for current view
+      const isPrivate = m.receiver_id != null;
+      if (target === 'global') {
+        if (!isPrivate && !m.room) renderMessage(m);
+      } else if (target.startsWith('private_')) {
+        const friendId = target.replace('private_', '');
+        if (isPrivate && (m.receiver_id == friendId || (m.receiver_id == user.id && m.from == target_username))) {
+           // We need to know who the friend is. Let's simplify and just render all permitted messages for now
+           // and let the user select the "room" (Global or a Friend)
+        }
+      }
+      // Simplified: Just render what the API returns (which is already filtered for safety)
+      if (target === 'global') {
+        if (!m.receiver_id) renderMessage(m);
+      } else {
+        const friendId = target;
+        if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) {
+          renderMessage(m);
+        }
+      }
+    });
   });
-});
+}
 
-msg.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-});
+// Better loadMessages with filtering
+function loadMessages() {
+  chat.innerHTML = "";
+  const selected = room.value;
+  fetch(`/api/messages?userId=${user.id}`)
+    .then(r => r.json())
+    .then(msgs => {
+      msgs.forEach(m => {
+        if (selected === 'global') {
+          if (!m.receiver_id) renderMessage(m);
+        } else {
+          // Private chat with a friend
+          const friendId = parseInt(selected);
+          // m.from is username, we need to handle sender_id in API
+          if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) {
+            renderMessage(m);
+          }
+        }
+      });
+    });
+}
 
-msg.addEventListener("input", ()=>{
-  socket.emit("typing", room.value, user.username);
-});
+function searchUsers() {
+  const q = userSearch.value.trim();
+  if (!q) return;
+  fetch("/api/users/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: q, currentUserId: user.id })
+  }).then(r => r.json()).then(list => {
+    searchResults.innerHTML = "";
+    list.forEach(u => {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = `<span>${u.username}</span><button onclick="addFriend(${u.id})" style="width:auto">Add Friend</button>`;
+      searchResults.appendChild(div);
+    });
+  });
+}
 
-socket.on("typing", u=>{
-  typing.textContent = `${u} is typing...`;
-  clearTimeout(window.typingTimer);
-  window.typingTimer = setTimeout(()=> typing.textContent="", 2000);
-});
+function addFriend(id) {
+  fetch("/api/friends/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId: user.id, friendId: id })
+  }).then(() => {
+    loadFriends();
+    searchResults.innerHTML = "";
+    userSearch.value = "";
+  });
+}
 
-socket.on("message", renderMessage);
+function loadFriends() {
+  fetch(`/api/friends/${user.id}`)
+    .then(r => r.json())
+    .then(list => {
+      friendsList.innerHTML = "";
+      // Update room dropdown
+      const current = room.value;
+      room.innerHTML = '<option value="global">Global Room</option>';
+      list.forEach(f => {
+        const btn = document.createElement("button");
+        btn.textContent = f.username;
+        btn.style.width = "auto";
+        btn.style.background = "#475569";
+        btn.onclick = () => { room.value = f.id; loadMessages(); };
+        friendsList.appendChild(btn);
+
+        const opt = document.createElement("option");
+        opt.value = f.id;
+        opt.textContent = `Chat with ${f.username}`;
+        room.appendChild(opt);
+      });
+      room.value = current;
+    });
+}
 
 function sendMessage(){
   const text = msg.value.trim();
   if(!text || !user) return;
   
+  const isPrivate = room.value !== 'global';
   const payload = {
     from: user.username,
-    room: room.value === "global" ? null : room.value,
-    text: text
+    room: isPrivate ? null : 'global',
+    text: text,
+    receiverId: isPrivate ? parseInt(room.value) : null
   };
   
-  console.log("Sending payload:", payload);
   socket.emit("message", payload);
   msg.value="";
 }
+
+socket.on("message", (m) => {
+  const selected = room.value;
+  const isGlobal = selected === 'global';
+  
+  if (isGlobal && !m.receiver_id) renderMessage(m);
+  else if (!isGlobal) {
+     const friendId = parseInt(selected);
+     if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) {
+       renderMessage(m);
+     }
+  }
+});
 
 function createUser(){
   fetch("/api/admin/users", {
