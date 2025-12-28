@@ -224,7 +224,19 @@ io.on("connection", socket => {
     socket.data.user = user;
     socket.join(`user_${user.id}`);
     onlineUsers.set(socket.id, user);
-    io.emit("presence", Array.from(onlineUsers.values()));
+    
+    // Filter out admins for regular users
+    const allPresence = Array.from(onlineUsers.values());
+    const publicPresence = allPresence.filter(u => u.role !== 'admin');
+    
+    // Admins see everyone, users see only non-admins
+    onlineUsers.forEach((u, sid) => {
+      if (u.role === 'admin') {
+        io.to(sid).emit("presence", allPresence);
+      } else {
+        io.to(sid).emit("presence", publicPresence);
+      }
+    });
   });
 
   socket.on("typing", (roomName, user) => {
@@ -262,7 +274,17 @@ io.on("connection", socket => {
 
   socket.on("disconnect", () => {
     onlineUsers.delete(socket.id);
-    io.emit("presence", Array.from(onlineUsers.values()));
+    
+    const allPresence = Array.from(onlineUsers.values());
+    const publicPresence = allPresence.filter(u => u.role !== 'admin');
+    
+    onlineUsers.forEach((u, sid) => {
+      if (u.role === 'admin') {
+        io.to(sid).emit("presence", allPresence);
+      } else {
+        io.to(sid).emit("presence", publicPresence);
+      }
+    });
   });
 });
 
