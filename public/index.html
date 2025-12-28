@@ -173,12 +173,15 @@ socket.on("message", renderMessage);
 
 function sendMessage(){
   const text = msg.value.trim();
-  if(!text) return;
+  if(!text || !user) return;
+  
   const payload = {
-    from:user.username,
+    from: user.username,
     room: room.value === "global" ? null : room.value,
-    text
+    text: text
   };
+  
+  console.log("Sending payload:", payload);
   socket.emit("message", payload);
   msg.value="";
 }

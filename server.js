@@ -231,18 +231,27 @@ io.on("connection", socket => {
 
   socket.on("message", async data => {
     try {
+      console.log("Server received message data:", data);
       const { from, room, text } = data;
+      
+      if (!from || !text) {
+        console.error("Missing from or text in message data");
+        return;
+      }
+
       const result = await pool.query(
         'INSERT INTO messages ("from", room, text) VALUES ($1, $2, $3) RETURNING "from", room, text, timestamp',
         [from, room, text]
       );
       const msg = result.rows[0];
+      console.log("Message saved and broadcasting:", msg);
 
       // Broadcast to everyone including the sender
-      if (data.room)
-        io.to(data.room).emit("message", msg);
-      else
+      if (room) {
+        io.to(room).emit("message", msg);
+      } else {
         io.emit("message", msg);
+      }
     } catch (e) {
       console.error("Message error:", e);
     }
