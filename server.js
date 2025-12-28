@@ -259,9 +259,11 @@ io.on("connection", socket => {
 
   socket.on("typing", (roomName, user) => {
     if (roomName !== 'global' && !isNaN(roomName)) {
+      // Private room
       socket.to(`user_${roomName}`).emit("typing", user);
     } else {
-      socket.to(roomName).emit("typing", user);
+      // Global room
+      socket.broadcast.emit("typing", user);
     }
   });
 

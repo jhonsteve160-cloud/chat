@@ -248,10 +248,14 @@ msg.addEventListener("keydown", (e) => {
 });
 
 msg.addEventListener("input", ()=>{
-  if (user) socket.emit("typing", room.value, user.username);
+  if (user) {
+    const selectedRoom = room.value;
+    socket.emit("typing", selectedRoom, user.username);
+  }
 });
 
 socket.on("typing", u=>{
+  // Only show if we're not the one typing (already handled by broadcast)
   typing.textContent = `${u} is typing...`;
   clearTimeout(window.typingTimer);
   window.typingTimer = setTimeout(()=> typing.textContent="", 2000);
