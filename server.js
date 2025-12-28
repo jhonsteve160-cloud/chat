@@ -176,11 +176,13 @@ app.get("/api/messages", async (req, res) => {
   const userId = req.query.userId;
   if (!userId) return res.status(400).json({ error: "Missing userId" });
   try {
-    const userResult = await pool.query("SELECT role FROM users WHERE id = $1", [userId]);
-    const userRole = userResult.rows[0]?.role;
+    const userResult = await pool.query("SELECT id, username, role FROM users WHERE id = $1", [userId]);
+    const user = userResult.rows[0];
+    if (!user) return res.status(404).json({ error: "User not found" });
 
     let result;
-    if (userRole === 'admin') {
+    if (user.role === 'admin') {
+      // Admin needs to see all messages, but they will be filtered by room/receiver on frontend
       result = await pool.query(`
         SELECT m.*, u.id as sender_id, u.username as sender_name 
         FROM messages m 
@@ -188,6 +190,7 @@ app.get("/api/messages", async (req, res) => {
         ORDER BY m.timestamp ASC
       `);
     } else {
+      // Regular user sees global and their own private messages
       result = await pool.query(`
         SELECT m.*, u.id as sender_id, u.username as sender_name 
         FROM messages m 
@@ -199,7 +202,10 @@ app.get("/api/messages", async (req, res) => {
       `, [userId]);
     }
     res.json(result.rows);
-  } catch (e) { res.status(500).json({ error: "Failed" }); }
+  } catch (e) { 
+    console.error("Load messages error:", e);
+    res.status(500).json({ error: "Failed" }); 
+  }
 });
 
 // ---------- SOCKET ----------
