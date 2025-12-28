@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width">
 <title>Secure Chat</title>
-
 <style>
 :root {
   --bg: #0f172a;
@@ -16,32 +15,34 @@
   --msg-bg: #334155;
 }
 body { margin:0; font-family: Inter, system-ui; background: var(--bg); color: var(--text); }
-.container { max-width:960px; margin:auto; padding:20px; }
-.card { background: var(--card-bg); border-radius:18px; padding:20px; box-shadow:0 10px 30px rgba(0,0,0,.3); border: 1px solid var(--border); }
+.container { max-width:960px; margin:auto; padding:10px; }
+.card { background: var(--card-bg); border-radius:18px; padding:15px; box-shadow:0 10px 30px rgba(0,0,0,.3); border: 1px solid var(--border); }
 input,button,select,textarea{
   padding:12px; border-radius:12px; border:1px solid var(--border);
-  width:100%; margin:8px 0; background: #0f172a; color: white; box-sizing: border-box;
+  width:100%; margin:5px 0; background: #0f172a; color: white; box-sizing: border-box;
 }
 button { background: var(--primary); border: none; cursor: pointer; font-weight: 600; transition: background 0.2s; }
 button:hover { background: var(--primary-hover); }
-#chat{height:450px; overflow-y:auto; padding:10px; background: #0f172a; border-radius:12px; border:1px solid var(--border); margin-bottom: 10px;}
+#chat{height:400px; overflow-y:auto; padding:10px; background: #0f172a; border-radius:12px; border:1px solid var(--border); margin-bottom: 10px;}
 .msg{padding:10px; margin:8px 0; border-radius:12px; background: var(--msg-bg); border: 1px solid var(--border); word-break: break-word;}
 .small{font-size:12px; opacity:.6}
-.row{display:flex; gap:10px; align-items: center;}
+.row{display:flex; gap:8px; align-items: center;}
 .badge{padding:4px 10px; border-radius:10px; background: var(--primary); font-size: 12px;}
 #online span{margin-right:10px; font-size: 14px; opacity: 0.8;}
 textarea#msg { height: 60px; resize: none; }
 .modal { background: rgba(0,0,0,0.8); position: fixed; top:0; left:0; width:100%; height:100%; display:none; justify-content:center; align-items:center; z-index: 100;}
-.modal-content { background: var(--card-bg); padding: 30px; border-radius: 18px; width: 100%; max-width: 400px; border: 1px solid var(--border); }
-@media(max-width:640px){ #chat{height:360px} }
+.modal-content { background: var(--card-bg); padding: 25px; border-radius: 18px; width: 100%; max-width: 400px; border: 1px solid var(--border); }
+.tabs { display: flex; gap: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+.tab { padding: 8px 16px; border-radius: 8px; cursor: pointer; opacity: 0.6; background: #0f172a; border: 1px solid var(--border); }
+.tab.active { opacity: 1; border-color: var(--primary); color: var(--primary); }
+@media(max-width:640px){ #chat{height:320px} }
 </style>
 </head>
-
 <body>
 <div class="container">
 <div class="card">
-<div class="row" style="justify-content: space-between;">
-  <h2>Secure Chat</h2>
+<div class="row" style="justify-content: space-between; margin-bottom: 10px;">
+  <h2 style="margin:0">Secure Chat</h2>
   <button id="profileBtn" style="width: auto; padding: 6px 12px; display:none;" onclick="showProfile()">Profile</button>
 </div>
 
@@ -51,7 +52,7 @@ textarea#msg { height: 60px; resize: none; }
   <button onclick="login()">Login</button>
 </div>
 
-<div id="adminPanel" style="display:none; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border);">
+<div id="adminPanel" style="display:none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border);">
   <h3>Admin Dashboard</h3>
   <div class="row">
     <input id="newUser" placeholder="New username">
@@ -63,30 +64,36 @@ textarea#msg { height: 60px; resize: none; }
 </div>
 
 <div id="chatUI" style="display:none">
-  <div class="row" style="margin-bottom: 15px;">
+  <div class="row" style="margin-bottom: 10px;">
     <span>Logged in as <b id="me" style="color: var(--primary);"></b></span>
     <span id="presenceCount" class="badge"></span>
   </div>
-  <div id="online" style="margin-bottom: 15px; padding: 10px; background: #0f172a; border-radius: 8px;"></div>
-  <select id="room" onchange="loadMessages()">
-    <option value="global">Global Room</option>
-  </select>
+  
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('global')">Global Chat</div>
+    <div class="tab" onclick="switchTab('friends')">Friends</div>
+  </div>
 
-  <div id="friendSection" style="margin: 15px 0;">
+  <div id="online" style="margin-bottom: 10px; padding: 8px; background: #0f172a; border-radius: 8px; font-size: 13px;"></div>
+
+  <div id="friendsView" style="display:none; margin-bottom: 15px;">
     <div class="row">
       <input id="userSearch" placeholder="Search users by name...">
       <button onclick="searchUsers()" style="width: auto;">Search</button>
     </div>
     <div id="searchResults" style="margin-top: 5px;"></div>
-    
-    <p><b>Friends</b></p>
+    <p><b>My Friends</b></p>
     <div id="friendsList" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
   </div>
+
+  <select id="room" onchange="loadMessages()" style="margin-bottom: 10px;">
+    <option value="global">Global Room</option>
+  </select>
 
   <div id="chat"></div>
   <div id="typing" class="small" style="height: 20px; color: var(--primary);"></div>
   <div class="row">
-    <textarea id="msg" placeholder="Type a message... (Enter to send, Shift+Enter for new line)"></textarea>
+    <textarea id="msg" placeholder="Type message..."></textarea>
     <button onclick="sendMessage()" style="width: 100px; height: 60px;">Send</button>
   </div>
 </div>
@@ -107,6 +114,22 @@ textarea#msg { height: 60px; resize: none; }
 <script>
 const socket = io();
 let user = null;
+let currentTab = 'global';
+
+function switchTab(t) {
+  currentTab = t;
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.querySelector(`.tab[onclick="switchTab('${t}')"]`).classList.add('active');
+  
+  if (t === 'friends') {
+    friendsView.style.display = 'block';
+    loadFriends();
+  } else {
+    friendsView.style.display = 'none';
+    room.value = 'global';
+    loadMessages();
+  }
+}
 
 function login() {
   fetch("/api/login", {
@@ -136,40 +159,6 @@ function login() {
 
 function loadMessages(){
   chat.innerHTML = "";
-  const target = room.value;
-  let url = `/api/messages?userId=${user.id}`;
-  
-  fetch(url)
-  .then(r=>r.json())
-  .then(msgs => {
-    msgs.forEach(m => {
-      // Filter for current view
-      const isPrivate = m.receiver_id != null;
-      if (target === 'global') {
-        if (!isPrivate && !m.room) renderMessage(m);
-      } else if (target.startsWith('private_')) {
-        const friendId = target.replace('private_', '');
-        if (isPrivate && (m.receiver_id == friendId || (m.receiver_id == user.id && m.from == target_username))) {
-           // We need to know who the friend is. Let's simplify and just render all permitted messages for now
-           // and let the user select the "room" (Global or a Friend)
-        }
-      }
-      // Simplified: Just render what the API returns (which is already filtered for safety)
-      if (target === 'global') {
-        if (!m.receiver_id) renderMessage(m);
-      } else {
-        const friendId = target;
-        if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) {
-          renderMessage(m);
-        }
-      }
-    });
-  });
-}
-
-// Better loadMessages with filtering
-function loadMessages() {
-  chat.innerHTML = "";
   const selected = room.value;
   fetch(`/api/messages?userId=${user.id}`)
     .then(r => r.json())
@@ -178,15 +167,84 @@ function loadMessages() {
         if (selected === 'global') {
           if (!m.receiver_id) renderMessage(m);
         } else {
-          // Private chat with a friend
           const friendId = parseInt(selected);
-          // m.from is username, we need to handle sender_id in API
           if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) {
             renderMessage(m);
           }
         }
       });
     });
+}
+
+function renderMessage(m){
+  const d = document.createElement("div");
+  d.className="msg";
+  d.innerHTML = `
+    <div style="display:flex; justify-content: space-between;">
+      <b style="color: var(--primary)">${m.from}</b>
+      <span class="small">${new Date(m.timestamp).toLocaleTimeString()}</span>
+    </div>
+    <div style="margin-top: 4px; white-space: pre-wrap;">${m.text}</div>
+  `;
+  chat.appendChild(d);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+socket.on("presence", list=>{
+  online.innerHTML = "<b>Online:</b> ";
+  presenceCount.textContent = list.length + " online";
+  list.forEach(u=>{
+    const s = document.createElement("span");
+    s.textContent = "• " + u.username;
+    online.appendChild(s);
+  });
+});
+
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+msg.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    if (isMobile) return; // Always new line on mobile
+    if (!e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
+});
+
+msg.addEventListener("input", ()=>{
+  if (user) socket.emit("typing", room.value, user.username);
+});
+
+socket.on("typing", u=>{
+  typing.textContent = `${u} is typing...`;
+  clearTimeout(window.typingTimer);
+  window.typingTimer = setTimeout(()=> typing.textContent="", 2000);
+});
+
+socket.on("message", (m) => {
+  const selected = room.value;
+  if (selected === 'global' && !m.receiver_id) renderMessage(m);
+  else if (selected !== 'global') {
+     const friendId = parseInt(selected);
+     if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) {
+       renderMessage(m);
+     }
+  }
+});
+
+function sendMessage(){
+  const text = msg.value.trim();
+  if(!text || !user) return;
+  const isPrivate = room.value !== 'global';
+  const payload = {
+    from: user.username,
+    room: isPrivate ? null : 'global',
+    text: text,
+    receiverId: isPrivate ? parseInt(room.value) : null
+  };
+  socket.emit("message", payload);
+  msg.value="";
 }
 
 function searchUsers() {
@@ -224,7 +282,6 @@ function loadFriends() {
     .then(r => r.json())
     .then(list => {
       friendsList.innerHTML = "";
-      // Update room dropdown
       const current = room.value;
       room.innerHTML = '<option value="global">Global Room</option>';
       list.forEach(f => {
@@ -244,45 +301,11 @@ function loadFriends() {
     });
 }
 
-function sendMessage(){
-  const text = msg.value.trim();
-  if(!text || !user) return;
-  
-  const isPrivate = room.value !== 'global';
-  const payload = {
-    from: user.username,
-    room: isPrivate ? null : 'global',
-    text: text,
-    receiverId: isPrivate ? parseInt(room.value) : null
-  };
-  
-  socket.emit("message", payload);
-  msg.value="";
-}
-
-socket.on("message", (m) => {
-  const selected = room.value;
-  const isGlobal = selected === 'global';
-  
-  if (isGlobal && !m.receiver_id) renderMessage(m);
-  else if (!isGlobal) {
-     const friendId = parseInt(selected);
-     if (m.receiver_id == friendId || (m.receiver_id == user.id && m.sender_id == friendId)) {
-       renderMessage(m);
-     }
-  }
-});
-
 function createUser(){
   fetch("/api/admin/users", {
     method:"POST",
     headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({
-      adminUser:"admin",
-      adminPass:"admin123",
-      username:newUser.value,
-      password:newPass.value
-    })
+    body:JSON.stringify({ adminUser:"admin", adminPass:"admin123", username:newUser.value, password:newPass.value })
   }).then(r=>r.json()).then(d=>{
     if(d.error){ alert(d.error); return; }
     loadUsers();
@@ -338,19 +361,10 @@ function updateProfile() {
   fetch("/api/user/update", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      currentUsername: user.username,
-      newUsername: updUser.value,
-      newPassword: updPass.value
-    })
+    body: JSON.stringify({ currentUsername: user.username, newUsername: updUser.value, newPassword: updPass.value })
   }).then(r => r.json()).then(d => {
     if (d.error) alert(d.error);
-    else {
-      alert("Profile updated!");
-      user.username = updUser.value;
-      me.textContent = user.username;
-      closeProfile();
-    }
+    else { alert("Profile updated!"); user.username = updUser.value; me.textContent = user.username; closeProfile(); }
   });
 }
 </script>

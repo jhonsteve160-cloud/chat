@@ -36,32 +36,36 @@ async function initDB() {
       )
     `);
 
-    // Handle existing users table that might have different columns (Railway scenario)
+    // Handle existing users table
     const tableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'");
     const columns = tableInfo.rows.map(r => r.column_name);
     
-    if (!columns.includes('password')) {
-      if (columns.includes('password_hash')) {
-        await client.query("ALTER TABLE users RENAME COLUMN password_hash TO password");
-      } else {
-        await client.query("ALTER TABLE users ADD COLUMN password TEXT");
-      }
-    }
-    if (!columns.includes('role')) {
-      await client.query("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'");
-    }
     if (!columns.includes('id')) {
       await client.query("ALTER TABLE users ADD COLUMN id SERIAL");
-      const pkCheck = await client.query(`
-        SELECT count(*) FROM information_schema.table_constraints 
-        WHERE table_name='users' AND constraint_type='PRIMARY KEY'
+    }
+
+    // CRITICAL: Ensure users(id) is the primary key or has a unique constraint
+    const pkCheckUsers = await client.query(`
+      SELECT count(*) FROM information_schema.table_constraints 
+      WHERE table_name='users' AND constraint_type='PRIMARY KEY'
+    `);
+    if (pkCheckUsers.rows[0].count == 0) {
+      await client.query("ALTER TABLE users ADD PRIMARY KEY (id)");
+    } else {
+      // Check if the PK is actually on 'id'
+      const pkColumnCheck = await client.query(`
+        SELECT kcu.column_name 
+        FROM information_schema.table_constraints tc 
+        JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name 
+        WHERE tc.table_name = 'users' AND tc.constraint_type = 'PRIMARY KEY'
       `);
-      if (pkCheck.rows[0].count == 0) {
-        await client.query("ALTER TABLE users ADD PRIMARY KEY (id)");
+      if (pkColumnCheck.rows[0].column_name !== 'id') {
+        // If PK is on something else, ensure 'id' is at least unique so it can be referenced
+        await client.query("ALTER TABLE users ADD CONSTRAINT users_id_unique UNIQUE (id)");
       }
     }
 
-    // Create friends table - ensured users(id) is primary key above
+    // Create friends table
     await client.query(`
       CREATE TABLE IF NOT EXISTS friends (
         id SERIAL PRIMARY KEY,
@@ -86,28 +90,14 @@ async function initDB() {
     const msgTableInfo = await client.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'messages'");
     const msgColumns = msgTableInfo.rows.map(r => r.column_name);
     
-    if (msgColumns.includes('sender')) {
-      await client.query("ALTER TABLE messages ALTER COLUMN sender DROP NOT NULL");
-    }
-    if (msgColumns.includes('receiver')) {
-      await client.query("ALTER TABLE messages ALTER COLUMN receiver DROP NOT NULL");
-    }
-    if (msgColumns.includes('content')) {
-      await client.query("ALTER TABLE messages ALTER COLUMN content DROP NOT NULL");
-    }
+    if (msgColumns.includes('sender')) await client.query("ALTER TABLE messages ALTER COLUMN sender DROP NOT NULL");
+    if (msgColumns.includes('receiver')) await client.query("ALTER TABLE messages ALTER COLUMN receiver DROP NOT NULL");
+    if (msgColumns.includes('content')) await client.query("ALTER TABLE messages ALTER COLUMN content DROP NOT NULL");
 
-    if (!msgColumns.includes('from')) {
-      await client.query('ALTER TABLE messages ADD COLUMN "from" TEXT NOT NULL DEFAULT \'unknown\'');
-    }
-    if (!msgColumns.includes('text')) {
-      await client.query('ALTER TABLE messages ADD COLUMN text TEXT NOT NULL DEFAULT \'\'');
-    }
-    if (!msgColumns.includes('room')) {
-      await client.query('ALTER TABLE messages ADD COLUMN room TEXT');
-    }
-    if (!msgColumns.includes('timestamp')) {
-      await client.query('ALTER TABLE messages ADD COLUMN timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP');
-    }
+    if (!msgColumns.includes('from')) await client.query('ALTER TABLE messages ADD COLUMN "from" TEXT NOT NULL DEFAULT \'unknown\'');
+    if (!msgColumns.includes('text')) await client.query('ALTER TABLE messages ADD COLUMN text TEXT NOT NULL DEFAULT \'\'');
+    if (!msgColumns.includes('room')) await client.query('ALTER TABLE messages ADD COLUMN room TEXT');
+    if (!msgColumns.includes('timestamp')) await client.query('ALTER TABLE messages ADD COLUMN timestamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP');
     if (!msgColumns.includes('receiver_id')) {
       await client.query("ALTER TABLE messages ADD COLUMN receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE");
     }

@@ -1,0 +1,71 @@
+Starting Container
+  dataType: undefined,
+  constraint: undefined,
+  file: 'tablecmds.c',
+  line: '12165',
+  routine: 'transformFkeyCheckAttrs'
+}
+npm warn config production Use `--omit=dev` instead.
+> secure-chat@1.0.0 start
+> node server.js
+Server running on port 8080
+Database initialization failed: error: there is no unique constraint matching given keys for referenced table "users"
+    at /app/node_modules/pg/lib/client.js:545:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async initDB (file:///app/server.js:65:5) {
+  length: 151,
+  severity: 'ERROR',
+  code: '42830',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+Message error: error: column "receiver_id" of relation "messages" does not exist
+    at /app/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Socket.<anonymous> (file:///app/server.js:268:22) {
+  length: 132,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '43',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_target.c',
+  line: '1065',
+  routine: 'checkInsertTargets'
+}
+Message error: error: column "receiver_id" of relation "messages" does not exist
+    at /app/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Socket.<anonymous> (file:///app/server.js:268:22) {
+  length: 132,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '43',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_target.c',
+  line: '1065',
+  routine: 'checkInsertTargets'
+}
